@@ -48,9 +48,16 @@ def find_latest_csv(csv_dir: str) -> Path:
 
 
 def load_rows(csv_path: Path) -> List[Dict[str, str]]:
-    with csv_path.open("r", encoding="utf-8", newline="") as f:
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
-        return [dict(row) for row in reader]
+        rows: List[Dict[str, str]] = []
+        for row in reader:
+            cleaned_row: Dict[str, str] = {}
+            for key, value in row.items():
+                cleaned_key = (key or "").replace("\ufeff", "").strip().strip('"').strip("'")
+                cleaned_row[cleaned_key] = value if value is not None else ""
+            rows.append(cleaned_row)
+        return rows
 
 
 def build_query(row: Dict[str, str]) -> Optional[str]:
