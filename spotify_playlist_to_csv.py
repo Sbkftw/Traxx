@@ -8,7 +8,6 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -21,6 +20,7 @@ ME_URL = "https://api.spotify.com/v1/me"
 PLAYLIST_URL = "https://api.spotify.com/v1/playlists/{playlist_id}"
 DEFAULT_SCOPE = "playlist-read-private playlist-read-collaborative"
 OUTPUT_DIR = "output"
+DOWNLOAD_STATUS_FIELD = "downloaded"
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -318,11 +318,90 @@ def sanitize_filename(value: str) -> str:
 
 
 def build_output_path(playlist_name: str) -> str:
-    date_part = datetime.now().strftime("%d-%m")
     safe_playlist_name = sanitize_filename(playlist_name)
-    filename = f"{safe_playlist_name}-{date_part}.csv"
+    filename = f"{safe_playlist_name}.csv"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     return os.path.join(OUTPUT_DIR, filename)
+
+
+def parse_downloaded_value(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "ok", "done"}
+
+
+def normalize_downloaded_value(value: object) -> str:
+    return "yes" if parse_downloaded_value(value) else "no"
+
+
+def find_latest_playlist_csv(playlist_name: str) -> Optional[str]:
+    if not os.path.isdir(OUTPUT_DIR):
+        return None
+
+    safe_playlist_name = sanitize_filename(playlist_name)
+    current_name = f"{safe_playlist_name}.csv"
+    current_path = os.path.join(OUTPUT_DIR, current_name)
+    if os.path.exists(current_path):
+        return current_path
+
+    # Compatibilite avec les anciens fichiers "<playlist>-dd-mm.csv".
+    pattern = re.compile(rf"^{re.escape(safe_playlist_name)}-\d{{2}}-\d{{2}}\.csv$", re.IGNORECASE)
+    candidates: List[str] = []
+    for filename in os.listdir(OUTPUT_DIR):
+        if pattern.match(filename):
+            candidates.append(os.path.join(OUTPUT_DIR, filename))
+
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
+
+
+def load_existing_rows(csv_path: str) -> List[Dict[str, object]]:
+    existing_rows: List[Dict[str, object]] = []
+    if not os.path.exists(csv_path):
+        return existing_rows
+
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            cleaned_row: Dict[str, object] = {}
+            for key, value in row.items():
+                cleaned_key = str(key or "").replace("\ufeff", "").strip()
+                cleaned_row[cleaned_key] = value if value is not None else ""
+            cleaned_row[DOWNLOAD_STATUS_FIELD] = normalize_downloaded_value(cleaned_row.get(DOWNLOAD_STATUS_FIELD, ""))
+            existing_rows.append(cleaned_row)
+    return existing_rows
+
+
+def merge_tracks_with_existing_csv(
+    rows: List[Dict[str, object]], playlist_name: str
+) -> Tuple[List[Dict[str, object]], int, int]:
+    previous_csv = find_latest_playlist_csv(playlist_name)
+    if not previous_csv:
+        merged_rows = []
+        for row in rows:
+            normalized_row = dict(row)
+            normalized_row[DOWNLOAD_STATUS_FIELD] = "no"
+            merged_rows.append(normalized_row)
+        return merged_rows, len(merged_rows), 0
+
+    existing_rows = load_existing_rows(previous_csv)
+    existing_track_ids = {
+        str(row.get("track_id", "")).strip()
+        for row in existing_rows
+        if str(row.get("track_id", "")).strip()
+    }
+    added_count = 0
+    for row in rows:
+        track_id = str(row.get("track_id", "")).strip()
+        if not track_id or track_id in existing_track_ids:
+            continue
+        normalized_row = dict(row)
+        normalized_row[DOWNLOAD_STATUS_FIELD] = "no"
+        existing_rows.append(normalized_row)
+        existing_track_ids.add(track_id)
+        added_count += 1
+
+    return existing_rows, added_count, len(existing_track_ids)
 
 
 def write_csv(rows: List[Dict[str, object]], output_path: str) -> None:
@@ -357,7 +436,12 @@ def main() -> None:
     token, granted_scope = get_user_access_token(client_id, client_secret, redirect_uri, scope)
     playlist_name = run_diagnostics(playlist_id, token, scope, granted_scope)
     tracks = fetch_all_tracks(playlist_id, token)
-    write_csv(tracks, build_output_path(playlist_name))
+    merged_rows, added_count, known_count = merge_tracks_with_existing_csv(tracks, playlist_name)
+    write_csv(merged_rows, build_output_path(playlist_name))
+    print(
+        f"Mise a jour playlist '{playlist_name}': {added_count} nouveau(x) titre(s) ajoute(s), "
+        f"{known_count} titre(s) deja present(s)."
+    )
 
 
 if __name__ == "__main__":

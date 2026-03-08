@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Tuple
 
 DEFAULT_CSV_DIR = "output"
 DEFAULT_DOWNLOAD_DIR = "downloads"
+DOWNLOAD_STATUS_FIELD = "downloaded"
 
 
 def sanitize_filename(value: str) -> str:
@@ -58,6 +59,38 @@ def load_rows(csv_path: Path) -> List[Dict[str, str]]:
                 cleaned_row[cleaned_key] = value if value is not None else ""
             rows.append(cleaned_row)
         return rows
+
+
+def parse_downloaded_value(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "ok", "done"}
+
+
+def set_downloaded_value(row: Dict[str, str], downloaded: bool) -> None:
+    row[DOWNLOAD_STATUS_FIELD] = "yes" if downloaded else "no"
+
+
+def ensure_download_status_field(rows: List[Dict[str, str]]) -> bool:
+    added = False
+    for row in rows:
+        if DOWNLOAD_STATUS_FIELD not in row:
+            row[DOWNLOAD_STATUS_FIELD] = "no"
+            added = True
+        else:
+            row[DOWNLOAD_STATUS_FIELD] = "yes" if parse_downloaded_value(row.get(DOWNLOAD_STATUS_FIELD, "")) else "no"
+    return added
+
+
+def save_rows(csv_path: Path, rows: List[Dict[str, str]]) -> None:
+    if not rows:
+        return
+    fieldnames = list(rows[0].keys())
+    if DOWNLOAD_STATUS_FIELD not in fieldnames:
+        fieldnames.append(DOWNLOAD_STATUS_FIELD)
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def build_query(row: Dict[str, str]) -> Optional[str]:
@@ -377,6 +410,7 @@ def pick_best_candidate(
 
 def download_tracks(
     rows: List[Dict[str, str]],
+    csv_path: Path,
     download_dir: str,
     playlist_name: str,
     audio_format: str,
@@ -390,6 +424,7 @@ def download_tracks(
     os.makedirs(target_download_dir, exist_ok=True)
     errors = 0
     processed = 0
+    skipped_already_downloaded = 0
     cookie_browser_candidates = detect_cookie_browser_candidates()
 
     for row in rows:
@@ -397,6 +432,13 @@ def download_tracks(
             break
 
         if not build_query(row):
+            continue
+
+        if parse_downloaded_value(row.get(DOWNLOAD_STATUS_FIELD, "")):
+            skipped_already_downloaded += 1
+            track_name = (row.get("track_name") or "").strip() or "track"
+            artists = (row.get("artists") or "").strip() or "Unknown Artist"
+            print(f"[SKIP] {track_name} - {artists} (deja telecharge)")
             continue
 
         track_name = (row.get("track_name") or "").strip() or "track"
@@ -463,6 +505,8 @@ def download_tracks(
 
         if selected_entry is None:
             errors += 1
+            set_downloaded_value(row, downloaded=False)
+            save_rows(csv_path, rows)
             print("    ECHEC: aucun resultat YouTube ne respecte les criteres stricts (titre/artiste/duree).")
             if last_error:
                 print(f"    DETAIL: {last_error}")
@@ -516,11 +560,15 @@ def download_tracks(
             cookie_browser_candidates=cookie_browser_candidates,
         )
         if run.returncode == 0:
+            set_downloaded_value(row, downloaded=True)
+            save_rows(csv_path, rows)
             print("    OK")
             continue
 
         output = (run.stderr.strip() or run.stdout.strip())
         errors += 1
+        set_downloaded_value(row, downloaded=False)
+        save_rows(csv_path, rows)
         last_error = output
 
         if last_error:
@@ -538,7 +586,10 @@ def download_tracks(
                 )
             print(f"    ECHEC: {last_error}")
 
-    print(f"\nTermine: {processed} titres traites, {errors} echec(s).")
+    print(
+        f"\nTermine: {processed} titres traites, {errors} echec(s), "
+        f"{skipped_already_downloaded} deja telecharge(s)."
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -619,12 +670,16 @@ def main() -> None:
     if not rows:
         print(f"CSV vide: {csv_path}")
         return
+    status_added = ensure_download_status_field(rows)
+    if status_added:
+        save_rows(csv_path, rows)
 
     playlist_name = infer_playlist_name_from_csv(csv_path)
     print(f"CSV source: {csv_path}")
     print(f"Dossier cible: {Path(args.download_dir) / playlist_name}")
     download_tracks(
         rows=rows,
+        csv_path=csv_path,
         download_dir=args.download_dir,
         playlist_name=playlist_name,
         audio_format=args.audio_format,
