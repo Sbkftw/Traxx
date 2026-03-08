@@ -139,23 +139,39 @@ def score_candidate(row: Dict[str, str], entry: Dict[str, object]) -> Tuple[floa
 
 
 def build_query_candidates(row: Dict[str, str]) -> List[str]:
+    def plain(text: str) -> str:
+        return " ".join(re.sub(r"[^\w\s]", " ", text).split())
+
     track_name = (row.get("track_name") or "").strip()
     artists = (row.get("artists") or "").strip()
     if not track_name:
         return []
     artist_list = [a.strip() for a in artists.split(",") if a.strip()]
     queries: List[str] = []
+    track_plain = plain(track_name)
+    artists_plain = plain(artists)
 
     if artists:
+        # Plain-text variants are less brittle than "topic/audio/official" in ytsearch ranking.
+        queries.extend(
+            [
+                f"{artists_plain} {track_plain}".strip(),
+                f"{artists} - {track_name}",
+            ]
+        )
         queries.extend([f"{artists} - {track_name} official audio", f"{artists} - {track_name} topic", f"{artists} - {track_name} audio"])
     if artist_list:
         primary = artist_list[0]
+        primary_plain = plain(primary)
+        queries.extend([f"{primary_plain} {track_plain}".strip(), f"{primary} - {track_name}"])
         queries.extend([f"{primary} - {track_name} official audio", f"{primary} - {track_name} topic", f"{primary} - {track_name} audio"])
     if len(artist_list) >= 2:
         top_two = ", ".join(artist_list[:2])
+        top_two_plain = plain(top_two)
+        queries.extend([f"{top_two_plain} {track_plain}".strip(), f"{top_two} - {track_name}"])
         queries.extend([f"{top_two} - {track_name} official audio", f"{top_two} - {track_name} topic", f"{top_two} - {track_name} audio"])
 
-    queries.extend([f"{track_name} official audio", f"{track_name} topic", f"{track_name} audio"])
+    queries.extend([track_plain or track_name, f"{track_name} official audio", f"{track_name} topic", f"{track_name} audio"])
     seen = set()
     unique_queries: List[str] = []
     for q in queries:
