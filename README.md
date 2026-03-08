@@ -55,6 +55,10 @@ The script is designed for incremental usage: when you add new songs to an exist
 python -m pip install -r requirements.txt
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines, quality expectations, and PR checklist.
+
 ## Environment Setup
 
 Create or edit `.env`:

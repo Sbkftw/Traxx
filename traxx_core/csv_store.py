@@ -59,15 +59,17 @@ def load_existing_rows(csv_path: str) -> List[Dict[str, object]]:
     return rows
 
 
+def make_pending_download_row(track: Dict[str, object]) -> Dict[str, object]:
+    normalized = dict(track)
+    normalized[DOWNLOAD_STATUS_FIELD] = "no"
+    return normalized
+
+
 def merge_tracks_with_existing_csv(new_tracks: List[Dict[str, object]], playlist_name: str) -> MergeResult:
     existing_csv = find_existing_playlist_csv(playlist_name)
     output_path = build_output_path(playlist_name)
     if not existing_csv:
-        fresh_rows = []
-        for row in new_tracks:
-            normalized = dict(row)
-            normalized[DOWNLOAD_STATUS_FIELD] = "no"
-            fresh_rows.append(normalized)
+        fresh_rows = [make_pending_download_row(row) for row in new_tracks]
         return MergeResult(rows=fresh_rows, added_count=len(fresh_rows), existing_count=0, output_path=output_path)
 
     existing_rows = load_existing_rows(existing_csv)
@@ -81,9 +83,7 @@ def merge_tracks_with_existing_csv(new_tracks: List[Dict[str, object]], playlist
         track_id = str(track.get("track_id", "")).strip()
         if not track_id or track_id in existing_track_ids:
             continue
-        normalized = dict(track)
-        normalized[DOWNLOAD_STATUS_FIELD] = "no"
-        existing_rows.append(normalized)
+        existing_rows.append(make_pending_download_row(track))
         existing_track_ids.add(track_id)
         added_count += 1
 
@@ -95,8 +95,12 @@ def write_csv(rows: List[Dict[str, object]], output_path: str) -> None:
         print("Aucun titre trouve dans cette playlist.")
         return
 
+    # Preserve visible field order from first row and ensure status column is present.
+    fieldnames = list(rows[0].keys())
+    if DOWNLOAD_STATUS_FIELD not in fieldnames:
+        fieldnames.append(DOWNLOAD_STATUS_FIELD)
     with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     print(f"CSV genere: {output_path} ({len(rows)} titres)")
@@ -107,4 +111,3 @@ def rows_to_string_rows(rows: List[Dict[str, object]]) -> List[Dict[str, str]]:
     for row in rows:
         normalized.append({str(k): "" if v is None else str(v) for k, v in row.items()})
     return normalized
-

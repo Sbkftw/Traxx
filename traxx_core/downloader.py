@@ -12,11 +12,27 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .constants import DOWNLOAD_STATUS_FIELD
+from .constants import DOWNLOAD_STATUS_FIELD, YTSEARCH_MAX_RESULTS
 from .utils import normalize_downloaded_value, parse_downloaded_value, sanitize_filename
+
+
+@dataclass(frozen=True)
+class DownloadOptions:
+    """Runtime options for one download session."""
+
+    csv_path: Path
+    download_dir: str
+    playlist_name: str
+    audio_format: str
+    convert_audio: bool
+    limit: Optional[int]
+    dry_run: bool
+    cookies_from_browser: str
+    cookies_file: str
 
 
 def build_query(row: Dict[str, str]) -> Optional[str]:
@@ -127,8 +143,19 @@ def build_query_candidates(row: Dict[str, str]) -> List[str]:
     artists = (row.get("artists") or "").strip()
     if not track_name:
         return []
-    queries = [f"{artists} - {track_name} official audio", f"{artists} - {track_name} topic", f"{artists} - {track_name} audio"] if artists else []
-    queries.extend([f"{track_name} official audio", f"{track_name} audio"])
+    artist_list = [a.strip() for a in artists.split(",") if a.strip()]
+    queries: List[str] = []
+
+    if artists:
+        queries.extend([f"{artists} - {track_name} official audio", f"{artists} - {track_name} topic", f"{artists} - {track_name} audio"])
+    if artist_list:
+        primary = artist_list[0]
+        queries.extend([f"{primary} - {track_name} official audio", f"{primary} - {track_name} topic", f"{primary} - {track_name} audio"])
+    if len(artist_list) >= 2:
+        top_two = ", ".join(artist_list[:2])
+        queries.extend([f"{top_two} - {track_name} official audio", f"{top_two} - {track_name} topic", f"{top_two} - {track_name} audio"])
+
+    queries.extend([f"{track_name} official audio", f"{track_name} topic", f"{track_name} audio"])
     seen = set()
     unique_queries: List[str] = []
     for q in queries:
@@ -341,7 +368,7 @@ def pick_best_candidate(
         sys.executable,
         "-m",
         "yt_dlp",
-        f"ytsearch8:{query}",
+        f"ytsearch{YTSEARCH_MAX_RESULTS}:{query}",
         "--dump-single-json",
         "--flat-playlist",
         "--skip-download",
@@ -438,19 +465,74 @@ def save_rows(csv_path: Path, rows: List[Dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
-def download_tracks(
-    rows: List[Dict[str, str]],
-    csv_path: Path,
-    download_dir: str,
-    playlist_name: str,
+def build_download_command(
+    *,
+    video_url: str,
+    output_template: str,
     audio_format: str,
     convert_audio: bool,
-    limit: Optional[int],
-    dry_run: bool,
     cookies_from_browser: str,
     cookies_file: str,
-) -> None:
-    target_download_dir = str(Path(download_dir) / sanitize_filename(playlist_name))
+) -> List[str]:
+    cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        video_url,
+        "--no-playlist",
+        "--no-overwrites",
+        "--embed-metadata",
+        "--no-update",
+        "-o",
+        output_template,
+    ]
+    js_runtimes = build_js_runtimes()
+    if js_runtimes:
+        cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
+    cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
+    if cookies_from_browser:
+        cmd.extend(["--cookies-from-browser", cookies_from_browser])
+    elif cookies_file:
+        cmd.extend(["--cookies", cookies_file])
+    return cmd
+
+
+def build_dry_run_preview_command(
+    *,
+    query: str,
+    output_template: str,
+    audio_format: str,
+    convert_audio: bool,
+    cookies_from_browser: str,
+    cookies_file: str,
+) -> List[str]:
+    preview_cmd = [
+        sys.executable,
+        "-m",
+        "yt_dlp",
+        f"ytsearch8:{query}",
+        "--no-playlist",
+        "--no-overwrites",
+        "--embed-metadata",
+        "--no-update",
+        "--extractor-args",
+        "youtube:player_client=web,web_creator",
+        "-o",
+        output_template,
+    ]
+    js_runtimes = build_js_runtimes()
+    if js_runtimes:
+        preview_cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
+    preview_cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
+    if cookies_from_browser:
+        preview_cmd.extend(["--cookies-from-browser", cookies_from_browser])
+    elif cookies_file:
+        preview_cmd.extend(["--cookies", cookies_file])
+    return preview_cmd
+
+
+def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> None:
+    target_download_dir = str(Path(options.download_dir) / sanitize_filename(options.playlist_name))
     Path(target_download_dir).mkdir(parents=True, exist_ok=True)
     errors = 0
     processed = 0
@@ -458,7 +540,7 @@ def download_tracks(
     cookie_browser_candidates = detect_cookie_browser_candidates()
 
     for row in rows:
-        if limit is not None and processed >= limit:
+        if options.limit is not None and processed >= options.limit:
             break
         if not build_query(row):
             continue
@@ -477,31 +559,17 @@ def download_tracks(
         print(f"[{processed}] {display_name}")
         last_error = ""
 
-        if dry_run:
+        if options.dry_run:
             candidates = build_query_candidates(row)
             preview_query = candidates[0] if candidates else f"{track_name} audio"
-            preview_cmd = [
-                sys.executable,
-                "-m",
-                "yt_dlp",
-                f"ytsearch8:{preview_query}",
-                "--no-playlist",
-                "--no-overwrites",
-                "--embed-metadata",
-                "--no-update",
-                "--extractor-args",
-                "youtube:player_client=web,web_creator",
-                "-o",
-                output_template,
-            ]
-            js_runtimes = build_js_runtimes()
-            if js_runtimes:
-                preview_cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
-            preview_cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
-            if cookies_from_browser:
-                preview_cmd.extend(["--cookies-from-browser", cookies_from_browser])
-            elif cookies_file:
-                preview_cmd.extend(["--cookies", cookies_file])
+            preview_cmd = build_dry_run_preview_command(
+                query=preview_query,
+                output_template=output_template,
+                audio_format=options.audio_format,
+                convert_audio=options.convert_audio,
+                cookies_from_browser=options.cookies_from_browser,
+                cookies_file=options.cookies_file,
+            )
             print("    DRY-RUN: verification stricte non executee (pas de reseau).")
             run_ytdlp_command(preview_cmd, dry_run=True)
             continue
@@ -510,7 +578,14 @@ def download_tracks(
         selected_reason = ""
         selected_query = ""
         for candidate in build_query_candidates(row):
-            entry, reason = pick_best_candidate(row, candidate, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+            entry, reason = pick_best_candidate(
+                row,
+                candidate,
+                options.dry_run,
+                options.cookies_from_browser,
+                options.cookies_file,
+                cookie_browser_candidates,
+            )
             if entry is None:
                 last_error = reason
                 continue
@@ -520,7 +595,7 @@ def download_tracks(
         if selected_entry is None:
             errors += 1
             set_downloaded_value(row, downloaded=False)
-            save_rows(csv_path, rows)
+            save_rows(options.csv_path, rows)
             print("    ECHEC: aucun resultat YouTube ne respecte les criteres stricts (titre/artiste/duree).")
             if last_error:
                 print(f"    DETAIL: {last_error}")
@@ -532,43 +607,43 @@ def download_tracks(
         print(f"    Match retenu: {video_title} (query: {selected_query})")
         print(f"    Score match: {selected_reason}")
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            video_url,
-            "--no-playlist",
-            "--no-overwrites",
-            "--embed-metadata",
-            "--no-update",
-            "-o",
-            output_template,
-        ]
-        js_runtimes = build_js_runtimes()
-        if js_runtimes:
-            cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
-        cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
-        if cookies_from_browser:
-            cmd.extend(["--cookies-from-browser", cookies_from_browser])
-        elif cookies_file:
-            cmd.extend(["--cookies", cookies_file])
+        cmd = build_download_command(
+            video_url=video_url,
+            output_template=output_template,
+            audio_format=options.audio_format,
+            convert_audio=options.convert_audio,
+            cookies_from_browser=options.cookies_from_browser,
+            cookies_file=options.cookies_file,
+        )
 
-        run = run_with_auth_fallback(cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+        run = run_with_auth_fallback(
+            cmd,
+            options.dry_run,
+            options.cookies_from_browser,
+            options.cookies_file,
+            cookie_browser_candidates,
+        )
         output = (run.stderr.strip() or run.stdout.strip())
         if run.returncode != 0 and is_js_challenge_error(output):
             cmd_android = remove_cookies_args(remove_js_runtimes_args(list(cmd)))
             cmd_android.extend(["--extractor-args", "youtube:player_client=android"])
-            run = run_with_auth_fallback(cmd_android, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+            run = run_with_auth_fallback(
+                cmd_android,
+                options.dry_run,
+                options.cookies_from_browser,
+                options.cookies_file,
+                cookie_browser_candidates,
+            )
         if run.returncode == 0:
             set_downloaded_value(row, downloaded=True)
-            save_rows(csv_path, rows)
+            save_rows(options.csv_path, rows)
             print("    OK")
             continue
 
         output = (run.stderr.strip() or run.stdout.strip())
         errors += 1
         set_downloaded_value(row, downloaded=False)
-        save_rows(csv_path, rows)
+        save_rows(options.csv_path, rows)
         if output:
             if "Please sign in" in output:
                 print("    CONSEIL: Utilise --cookies-from-browser edge|chrome|firefox, ou --cookies <fichier.txt>.")

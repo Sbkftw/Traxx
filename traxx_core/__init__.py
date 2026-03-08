@@ -7,3 +7,6 @@ This package contains the application logic split by responsibility:
 - CLI orchestration
 """
 
+from .app import main
+
+__all__ = ["main"]

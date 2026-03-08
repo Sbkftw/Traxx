@@ -14,7 +14,15 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
-from .constants import AUTHORIZE_URL, ME_URL, PLAYLIST_ITEMS_URL, PLAYLIST_URL, TOKEN_URL
+from .constants import (
+    AUTHORIZE_URL,
+    LOCAL_CALLBACK_WAIT_SECONDS,
+    ME_URL,
+    PLAYLIST_ITEMS_URL,
+    PLAYLIST_URL,
+    REQUEST_TIMEOUT_SECONDS,
+    TOKEN_URL,
+)
 
 
 @dataclass(frozen=True)
@@ -46,7 +54,11 @@ def extract_code_from_redirect_url(redirected_url: str) -> str:
     return query["code"][0]
 
 
-def try_get_code_via_local_callback(auth_url: str, redirect_uri: str, timeout_seconds: int = 120) -> Optional[str]:
+def try_get_code_via_local_callback(
+    auth_url: str,
+    redirect_uri: str,
+    timeout_seconds: int = LOCAL_CALLBACK_WAIT_SECONDS,
+) -> Optional[str]:
     parsed_redirect = urllib.parse.urlparse(redirect_uri)
     if parsed_redirect.scheme != "http":
         return None
@@ -155,6 +167,36 @@ def spotify_error_message(response: requests.Response) -> str:
     return base
 
 
+def request_spotify_json(
+    method: str,
+    url: str,
+    *,
+    token: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
+    data: Optional[Dict[str, str]] = None,
+    params: Optional[Dict[str, object]] = None,
+) -> Dict[str, object]:
+    """Perform a Spotify API request and return a validated JSON payload."""
+
+    request_headers: Dict[str, str] = {"Accept": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    if token:
+        request_headers["Authorization"] = f"Bearer {token}"
+
+    response = requests.request(
+        method=method,
+        url=url,
+        headers=request_headers,
+        data=data,
+        params=params,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(spotify_error_message(response))
+    return parse_json_response(response)
+
+
 def get_user_access_token(client_id: str, client_secret: str, redirect_uri: str, scope: str) -> SpotifySession:
     auth_url = build_authorize_url(client_id, redirect_uri, scope)
     code = try_get_code_via_local_callback(auth_url, redirect_uri)
@@ -167,15 +209,12 @@ def get_user_access_token(client_id: str, client_secret: str, redirect_uri: str,
 
     creds = f"{client_id}:{client_secret}".encode("utf-8")
     encoded = base64.b64encode(creds).decode("utf-8")
-    response = requests.post(
+    data = request_spotify_json(
+        "POST",
         TOKEN_URL,
         headers={"Authorization": f"Basic {encoded}"},
         data={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri},
-        timeout=20,
     )
-    if response.status_code >= 400:
-        raise RuntimeError(spotify_error_message(response))
-    data = parse_json_response(response)
     access_token = data.get("access_token")
     if not access_token:
         raise RuntimeError("Le token d'acces est absent de la reponse Spotify.")
@@ -190,18 +229,12 @@ def extract_playlist_id(value: str) -> str:
 
 
 def get_current_user(token: str) -> Dict[str, object]:
-    response = requests.get(ME_URL, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}, timeout=20)
-    if response.status_code >= 400:
-        raise RuntimeError(spotify_error_message(response))
-    return parse_json_response(response)
+    return request_spotify_json("GET", ME_URL, token=token)
 
 
 def check_playlist_access(playlist_id: str, token: str) -> Dict[str, object]:
     url = PLAYLIST_URL.format(playlist_id=playlist_id)
-    response = requests.get(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}, timeout=20)
-    if response.status_code >= 400:
-        raise RuntimeError(spotify_error_message(response))
-    return parse_json_response(response)
+    return request_spotify_json("GET", url, token=token)
 
 
 def run_diagnostics(playlist_id: str, token: str, requested_scope: str, granted_scope: str) -> str:
@@ -220,19 +253,18 @@ def run_diagnostics(playlist_id: str, token: str, requested_scope: str, granted_
 
 
 def fetch_all_tracks(playlist_id: str, token: str) -> List[Dict[str, object]]:
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     next_url = PLAYLIST_ITEMS_URL.format(playlist_id=playlist_id)
     params: Optional[Dict[str, object]] = {"limit": 100, "offset": 0, "additional_types": "track"}
     rows: List[Dict[str, object]] = []
 
     while next_url:
-        response = requests.get(next_url, headers=headers, params=params, timeout=20)
-        if response.status_code >= 400:
-            message = spotify_error_message(response)
-            if response.status_code == 403:
-                message += f" | URL: {response.url}"
-            raise RuntimeError(message)
-        data = parse_json_response(response)
+        try:
+            data = request_spotify_json("GET", next_url, token=token, params=params)
+        except RuntimeError as exc:
+            # Keep original debugging hint: include URL for auth/scope 403 analysis.
+            if "Spotify API error 403:" in str(exc):
+                raise RuntimeError(f"{exc} | URL: {next_url}") from exc
+            raise
         params = None
 
         for item in data.get("items", []):
@@ -259,4 +291,3 @@ def fetch_all_tracks(playlist_id: str, token: str) -> List[Dict[str, object]]:
         next_url = str(raw_next) if raw_next else None
 
     return rows
-
