@@ -1,9 +1,11 @@
-import argparse
+"""YouTube download workflow and CSV status updates."""
+
+from __future__ import annotations
+
 import csv
 import difflib
 import importlib.util
 import json
-import os
 import platform
 import re
 import shutil
@@ -13,84 +15,8 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
-DEFAULT_CSV_DIR = "output"
-DEFAULT_DOWNLOAD_DIR = "downloads"
-DOWNLOAD_STATUS_FIELD = "downloaded"
-
-
-def sanitize_filename(value: str) -> str:
-    cleaned = "".join("_" if c in '<>:"/\\|?*\x00' else c for c in value)
-    cleaned = " ".join(cleaned.split()).strip(" .")
-    if not cleaned:
-        return "track"
-    return cleaned[:150]
-
-
-def infer_playlist_name_from_csv(csv_path: Path) -> str:
-    stem = csv_path.stem.strip()
-    # Expected generator format: "<playlist-name>-dd-mm.csv"
-    match = re.match(r"^(.*)-\d{2}-\d{2}$", stem)
-    if match and match.group(1).strip():
-        return sanitize_filename(match.group(1).strip())
-    return sanitize_filename(stem or "playlist")
-
-
-def find_latest_csv(csv_dir: str) -> Path:
-    folder = Path(csv_dir)
-    if not folder.exists():
-        raise FileNotFoundError(f"Dossier introuvable: {csv_dir}")
-
-    csv_files = [p for p in folder.glob("*.csv") if p.is_file()]
-    if not csv_files:
-        raise FileNotFoundError(f"Aucun fichier CSV trouve dans: {csv_dir}")
-
-    return max(csv_files, key=lambda p: p.stat().st_mtime)
-
-
-def load_rows(csv_path: Path) -> List[Dict[str, str]]:
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        rows: List[Dict[str, str]] = []
-        for row in reader:
-            cleaned_row: Dict[str, str] = {}
-            for key, value in row.items():
-                cleaned_key = (key or "").replace("\ufeff", "").strip().strip('"').strip("'")
-                cleaned_row[cleaned_key] = value if value is not None else ""
-            rows.append(cleaned_row)
-        return rows
-
-
-def parse_downloaded_value(value: object) -> bool:
-    text = str(value or "").strip().lower()
-    return text in {"1", "true", "yes", "y", "ok", "done"}
-
-
-def set_downloaded_value(row: Dict[str, str], downloaded: bool) -> None:
-    row[DOWNLOAD_STATUS_FIELD] = "yes" if downloaded else "no"
-
-
-def ensure_download_status_field(rows: List[Dict[str, str]]) -> bool:
-    added = False
-    for row in rows:
-        if DOWNLOAD_STATUS_FIELD not in row:
-            row[DOWNLOAD_STATUS_FIELD] = "no"
-            added = True
-        else:
-            row[DOWNLOAD_STATUS_FIELD] = "yes" if parse_downloaded_value(row.get(DOWNLOAD_STATUS_FIELD, "")) else "no"
-    return added
-
-
-def save_rows(csv_path: Path, rows: List[Dict[str, str]]) -> None:
-    if not rows:
-        return
-    fieldnames = list(rows[0].keys())
-    if DOWNLOAD_STATUS_FIELD not in fieldnames:
-        fieldnames.append(DOWNLOAD_STATUS_FIELD)
-    with csv_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+from .constants import DOWNLOAD_STATUS_FIELD
+from .utils import normalize_downloaded_value, parse_downloaded_value, sanitize_filename
 
 
 def build_query(row: Dict[str, str]) -> Optional[str]:
@@ -98,9 +24,7 @@ def build_query(row: Dict[str, str]) -> Optional[str]:
     artists = (row.get("artists") or "").strip()
     if not track_name:
         return None
-    if artists:
-        return f"{artists} - {track_name} audio"
-    return f"{track_name} audio"
+    return f"{artists} - {track_name} audio" if artists else f"{track_name} audio"
 
 
 def normalize_text(value: str) -> str:
@@ -115,19 +39,7 @@ def tokenize(value: str) -> List[str]:
     text = normalize_text(value)
     if not text:
         return []
-    stop_words = {
-        "the",
-        "and",
-        "feat",
-        "featuring",
-        "ft",
-        "official",
-        "audio",
-        "video",
-        "lyrics",
-        "remix",
-        "mix",
-    }
+    stop_words = {"the", "and", "feat", "featuring", "ft", "official", "audio", "video", "lyrics", "remix", "mix"}
     return [w for w in text.split() if len(w) > 1 and w not in stop_words]
 
 
@@ -139,9 +51,7 @@ def parse_duration_seconds(row: Dict[str, str]) -> Optional[int]:
         ms = int(raw)
     except ValueError:
         return None
-    if ms <= 0:
-        return None
-    return ms // 1000
+    return ms // 1000 if ms > 0 else None
 
 
 def safe_int(value: object) -> Optional[int]:
@@ -155,13 +65,7 @@ def safe_int(value: object) -> Optional[int]:
 
 
 def build_search_candidate_text(entry: Dict[str, object]) -> str:
-    parts = [
-        str(entry.get("title") or ""),
-        str(entry.get("uploader") or ""),
-        str(entry.get("channel") or ""),
-        str(entry.get("artist") or ""),
-        str(entry.get("track") or ""),
-    ]
+    parts = [str(entry.get("title") or ""), str(entry.get("uploader") or ""), str(entry.get("channel") or ""), str(entry.get("artist") or ""), str(entry.get("track") or "")]
     return " ".join(p for p in parts if p)
 
 
@@ -188,7 +92,6 @@ def score_candidate(row: Dict[str, str], entry: Dict[str, object]) -> Tuple[floa
     title_similarity = difflib.SequenceMatcher(a=track_norm, b=title_norm).ratio() if track_norm and title_norm else 0.0
     title_token_score = token_overlap_ratio(tokenize(track_name), tokenize(title))
     title_score = max(title_similarity, title_token_score)
-
     artist_score = token_overlap_ratio(tokenize(artists), tokenize(searchable_text))
 
     duration_score = 0.0
@@ -224,16 +127,8 @@ def build_query_candidates(row: Dict[str, str]) -> List[str]:
     artists = (row.get("artists") or "").strip()
     if not track_name:
         return []
-
-    queries: List[str] = []
-    if artists:
-        queries.append(f"{artists} - {track_name} official audio")
-        queries.append(f"{artists} - {track_name} topic")
-        queries.append(f"{artists} - {track_name} audio")
-    queries.append(f"{track_name} official audio")
-    queries.append(f"{track_name} audio")
-
-    # De-duplicate while preserving order.
+    queries = [f"{artists} - {track_name} official audio", f"{artists} - {track_name} topic", f"{artists} - {track_name} audio"] if artists else []
+    queries.extend([f"{track_name} official audio", f"{track_name} audio"])
     seen = set()
     unique_queries: List[str] = []
     for q in queries:
@@ -257,11 +152,7 @@ def preflight_ytdlp_runtime_check() -> None:
     has_ejs = importlib.util.find_spec("yt_dlp_ejs") is not None
     if has_ejs and (has_node or has_deno):
         return
-
-    print(
-        "INFO: Environnement yt-dlp incomplet pour certains flux YouTube "
-        "(signature/n challenge)."
-    )
+    print("INFO: Environnement yt-dlp incomplet pour certains flux YouTube (signature/n challenge).")
     print("      Recommande: installer un runtime JS (node ou deno) + support EJS.")
 
 
@@ -275,7 +166,6 @@ def build_js_runtimes() -> List[str]:
 
 
 def detect_cookie_browser_candidates() -> List[str]:
-    # Candidate order tuned for common Windows setups first.
     candidates = ["edge", "chrome", "firefox"]
     if platform.system().lower() == "darwin":
         candidates = ["safari", "chrome", "firefox", "edge"]
@@ -286,10 +176,7 @@ def detect_cookie_browser_candidates() -> List[str]:
 
 def is_signin_required_error(output: str) -> bool:
     lowered = output.lower()
-    return (
-        "please sign in" in lowered
-        or "use --cookies-from-browser or --cookies" in lowered
-    )
+    return "please sign in" in lowered or "use --cookies-from-browser or --cookies" in lowered
 
 
 def has_ffmpeg() -> bool:
@@ -322,11 +209,9 @@ def run_with_auth_fallback(
         if is_signin_required_error(output):
             for browser in cookie_browser_candidates:
                 print(f"    INFO: Nouvelle tentative avec cookies navigateur: {browser}")
-                cmd_with_browser_cookies = cmd + ["--cookies-from-browser", browser]
-                retry = run_ytdlp_command(cmd_with_browser_cookies, dry_run)
+                retry = run_ytdlp_command(cmd + ["--cookies-from-browser", browser], dry_run)
                 if retry.returncode == 0:
-                    run = retry
-                    break
+                    return retry
                 retry_output = (retry.stderr.strip() or retry.stdout.strip())
                 if "Failed to decrypt with DPAPI" in retry_output:
                     continue
@@ -360,17 +245,10 @@ def pick_best_candidate(
         search_cmd.extend(["--cookies-from-browser", cookies_from_browser])
     elif cookies_file:
         search_cmd.extend(["--cookies", cookies_file])
-
     if dry_run:
         return None, "dry-run: selection stricte non evaluee"
 
-    run = run_with_auth_fallback(
-        cmd=search_cmd,
-        dry_run=dry_run,
-        cookies_from_browser=cookies_from_browser,
-        cookies_file=cookies_file,
-        cookie_browser_candidates=cookie_browser_candidates,
-    )
+    run = run_with_auth_fallback(search_cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
     if run.returncode != 0:
         output = (run.stderr.strip() or run.stdout.strip())
         return None, output or "search-failed"
@@ -408,6 +286,33 @@ def pick_best_candidate(
     return best_entry, best_reason
 
 
+def set_downloaded_value(row: Dict[str, str], downloaded: bool) -> None:
+    row[DOWNLOAD_STATUS_FIELD] = "yes" if downloaded else "no"
+
+
+def ensure_download_status_field(rows: List[Dict[str, str]]) -> bool:
+    added = False
+    for row in rows:
+        if DOWNLOAD_STATUS_FIELD not in row:
+            row[DOWNLOAD_STATUS_FIELD] = "no"
+            added = True
+        else:
+            row[DOWNLOAD_STATUS_FIELD] = normalize_downloaded_value(row.get(DOWNLOAD_STATUS_FIELD, ""))
+    return added
+
+
+def save_rows(csv_path: Path, rows: List[Dict[str, str]]) -> None:
+    if not rows:
+        return
+    fieldnames = list(rows[0].keys())
+    if DOWNLOAD_STATUS_FIELD not in fieldnames:
+        fieldnames.append(DOWNLOAD_STATUS_FIELD)
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def download_tracks(
     rows: List[Dict[str, str]],
     csv_path: Path,
@@ -421,7 +326,7 @@ def download_tracks(
     cookies_file: str,
 ) -> None:
     target_download_dir = str(Path(download_dir) / sanitize_filename(playlist_name))
-    os.makedirs(target_download_dir, exist_ok=True)
+    Path(target_download_dir).mkdir(parents=True, exist_ok=True)
     errors = 0
     processed = 0
     skipped_already_downloaded = 0
@@ -430,10 +335,8 @@ def download_tracks(
     for row in rows:
         if limit is not None and processed >= limit:
             break
-
         if not build_query(row):
             continue
-
         if parse_downloaded_value(row.get(DOWNLOAD_STATUS_FIELD, "")):
             skipped_already_downloaded += 1
             track_name = (row.get("track_name") or "").strip() or "track"
@@ -444,14 +347,14 @@ def download_tracks(
         track_name = (row.get("track_name") or "").strip() or "track"
         artists = (row.get("artists") or "").strip() or "Unknown Artist"
         display_name = f"{track_name} - {artists}"
-        safe_name = sanitize_filename(display_name)
-        output_template = str(Path(target_download_dir) / f"{safe_name}.%(ext)s")
-
+        output_template = str(Path(target_download_dir) / f"{sanitize_filename(display_name)}.%(ext)s")
         processed += 1
         print(f"[{processed}] {display_name}")
         last_error = ""
+
         if dry_run:
-            preview_query = build_query_candidates(row)[0] if build_query_candidates(row) else f"{track_name} audio"
+            candidates = build_query_candidates(row)
+            preview_query = candidates[0] if candidates else f"{track_name} audio"
             preview_cmd = [
                 sys.executable,
                 "-m",
@@ -469,10 +372,7 @@ def download_tracks(
             js_runtimes = build_js_runtimes()
             if js_runtimes:
                 preview_cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
-            if convert_audio:
-                preview_cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"])
-            else:
-                preview_cmd.extend(["-f", "bestaudio/best"])
+            preview_cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
             if cookies_from_browser:
                 preview_cmd.extend(["--cookies-from-browser", cookies_from_browser])
             elif cookies_file:
@@ -484,23 +384,12 @@ def download_tracks(
         selected_entry: Optional[Dict[str, object]] = None
         selected_reason = ""
         selected_query = ""
-
         for candidate in build_query_candidates(row):
-            entry, reason = pick_best_candidate(
-                row=row,
-                query=candidate,
-                dry_run=dry_run,
-                cookies_from_browser=cookies_from_browser,
-                cookies_file=cookies_file,
-                cookie_browser_candidates=cookie_browser_candidates,
-            )
+            entry, reason = pick_best_candidate(row, candidate, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
             if entry is None:
                 last_error = reason
                 continue
-
-            selected_entry = entry
-            selected_reason = reason
-            selected_query = candidate
+            selected_entry, selected_reason, selected_query = entry, reason, candidate
             break
 
         if selected_entry is None:
@@ -535,30 +424,13 @@ def download_tracks(
         js_runtimes = build_js_runtimes()
         if js_runtimes:
             cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
-        if convert_audio:
-            cmd.extend(
-                [
-                    "-x",
-                    "--audio-format",
-                    audio_format,
-                    "--audio-quality",
-                    "0",
-                ]
-            )
-        else:
-            cmd.extend(["-f", "bestaudio/best"])
+        cmd.extend(["-x", "--audio-format", audio_format, "--audio-quality", "0"] if convert_audio else ["-f", "bestaudio/best"])
         if cookies_from_browser:
             cmd.extend(["--cookies-from-browser", cookies_from_browser])
         elif cookies_file:
             cmd.extend(["--cookies", cookies_file])
 
-        run = run_with_auth_fallback(
-            cmd=cmd,
-            dry_run=dry_run,
-            cookies_from_browser=cookies_from_browser,
-            cookies_file=cookies_file,
-            cookie_browser_candidates=cookie_browser_candidates,
-        )
+        run = run_with_auth_fallback(cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
         if run.returncode == 0:
             set_downloaded_value(row, downloaded=True)
             save_rows(csv_path, rows)
@@ -569,131 +441,12 @@ def download_tracks(
         errors += 1
         set_downloaded_value(row, downloaded=False)
         save_rows(csv_path, rows)
-        last_error = output
+        if output:
+            if "Please sign in" in output:
+                print("    CONSEIL: Utilise --cookies-from-browser edge|chrome|firefox, ou --cookies <fichier.txt>.")
+            if ("Signature solving failed" in output or "n challenge solving failed" in output) and "Please sign in" not in output:
+                print("    CONSEIL: Installe node/deno + 'pip install -U \"yt-dlp[ejs]\"'.")
+            print(f"    ECHEC: {output}")
 
-        if last_error:
-            if "Please sign in" in last_error:
-                print(
-                    "    CONSEIL: YouTube demande une session. Utilise "
-                    "--cookies-from-browser edge|chrome|firefox, ou --cookies <fichier.txt>."
-                )
-            if (
-                "Signature solving failed" in last_error
-                or "n challenge solving failed" in last_error
-            ) and "Please sign in" not in last_error:
-                print(
-                    "    CONSEIL: Installe node/deno + 'pip install -U \"yt-dlp[ejs]\"'."
-                )
-            print(f"    ECHEC: {last_error}")
+    print(f"\nTermine: {processed} titres traites, {errors} echec(s), {skipped_already_downloaded} deja telecharge(s).")
 
-    print(
-        f"\nTermine: {processed} titres traites, {errors} echec(s), "
-        f"{skipped_already_downloaded} deja telecharge(s)."
-    )
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Telecharge les titres d'un CSV Spotify via yt-dlp (recherche YouTube)."
-    )
-    parser.add_argument(
-        "--csv",
-        dest="csv_path",
-        default="",
-        help="Chemin du CSV. Si absent, prend le plus recent fichier dans output/.",
-    )
-    parser.add_argument(
-        "--csv-dir",
-        default=DEFAULT_CSV_DIR,
-        help="Dossier ou chercher le CSV le plus recent (defaut: output).",
-    )
-    parser.add_argument(
-        "--download-dir",
-        default=DEFAULT_DOWNLOAD_DIR,
-        help="Dossier des fichiers telecharges (defaut: downloads).",
-    )
-    parser.add_argument(
-        "--audio-format",
-        default="mp3",
-        help="Format audio cible pour yt-dlp -x (defaut: mp3).",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="Nombre max de titres a traiter.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Affiche les commandes sans telecharger.",
-    )
-    parser.add_argument(
-        "--cookies-from-browser",
-        default=os.getenv("YTDLP_COOKIES_FROM_BROWSER", ""),
-        help=(
-            "Ex: chrome, edge, firefox. Recommande pour limiter les blocages YouTube "
-            "(ou via env YTDLP_COOKIES_FROM_BROWSER)."
-        ),
-    )
-    parser.add_argument(
-        "--cookies",
-        default=os.getenv("YTDLP_COOKIES_FILE", ""),
-        help=(
-            "Chemin vers un fichier cookies Netscape exporte depuis le navigateur "
-            "(ou via env YTDLP_COOKIES_FILE)."
-        ),
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    ensure_ytdlp_installed()
-    preflight_ytdlp_runtime_check()
-    convert_audio = has_ffmpeg()
-    if not convert_audio:
-        print(
-            "INFO: ffmpeg/ffprobe introuvable -> telechargement audio sans conversion "
-            "(pas de mp3 force)."
-        )
-
-    if args.csv_path:
-        csv_path = Path(args.csv_path)
-    else:
-        csv_path = find_latest_csv(args.csv_dir)
-
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV introuvable: {csv_path}")
-
-    rows = load_rows(csv_path)
-    if not rows:
-        print(f"CSV vide: {csv_path}")
-        return
-    status_added = ensure_download_status_field(rows)
-    if status_added:
-        save_rows(csv_path, rows)
-
-    playlist_name = infer_playlist_name_from_csv(csv_path)
-    print(f"CSV source: {csv_path}")
-    print(f"Dossier cible: {Path(args.download_dir) / playlist_name}")
-    download_tracks(
-        rows=rows,
-        csv_path=csv_path,
-        download_dir=args.download_dir,
-        playlist_name=playlist_name,
-        audio_format=args.audio_format,
-        convert_audio=convert_audio,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        cookies_from_browser=args.cookies_from_browser.strip(),
-        cookies_file=args.cookies.strip(),
-    )
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        print(f"Erreur: {exc}")
-        sys.exit(1)

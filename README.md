@@ -6,6 +6,8 @@
 2. Generate or update a playlist CSV in `output/`
 3. Start downloading tracks from YouTube with `yt-dlp`
 
+![Traxx hero](traxx-hero.svg)
+
 The script is designed for incremental usage: when you add new songs to an existing Spotify playlist, it appends only new tracks to the CSV and marks them as `downloaded=no`.
 
 ## What The Script Solves
@@ -79,6 +81,25 @@ Notes:
 python traxx.py
 ```
 
+## Code Structure
+
+The codebase is split into focused modules to keep contributions safe and predictable:
+
+- `traxx.py`
+  - Thin executable entrypoint
+- `traxx_core/app.py`
+  - CLI parsing and end-to-end orchestration
+- `traxx_core/spotify.py`
+  - Spotify OAuth, diagnostics, playlist fetch
+- `traxx_core/csv_store.py`
+  - CSV merge/write logic and backward-compatible file discovery
+- `traxx_core/downloader.py`
+  - YouTube candidate scoring + yt-dlp download + CSV status updates
+- `traxx_core/utils.py`
+  - Shared helpers (`.env`, filename sanitization, `downloaded` normalization)
+- `traxx_core/constants.py`
+  - Shared constants and default paths
+
 ## CLI Options (`traxx.py`)
 
 - `--no-download`
@@ -128,4 +149,3 @@ python traxx.py --limit 20 --cookies-from-browser edge
   - Install `ffmpeg` and `ffprobe`
 - OAuth callback issues:
   - Verify `SPOTIFY_REDIRECT_URI` matches your Spotify app settings exactly
-
