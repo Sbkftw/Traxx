@@ -1,3 +1,4 @@
+import argparse
 import base64
 import csv
 import http.server
@@ -8,6 +9,7 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -21,6 +23,7 @@ PLAYLIST_URL = "https://api.spotify.com/v1/playlists/{playlist_id}"
 DEFAULT_SCOPE = "playlist-read-private playlist-read-collaborative"
 OUTPUT_DIR = "output"
 DOWNLOAD_STATUS_FIELD = "downloaded"
+DEFAULT_DOWNLOAD_DIR = "downloads"
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -418,7 +421,99 @@ def write_csv(rows: List[Dict[str, object]], output_path: str) -> None:
     print(f"CSV genere: {output_path} ({len(rows)} titres)")
 
 
+def rows_to_string_rows(rows: List[Dict[str, object]]) -> List[Dict[str, str]]:
+    normalized_rows: List[Dict[str, str]] = []
+    for row in rows:
+        normalized_row: Dict[str, str] = {}
+        for key, value in row.items():
+            normalized_row[str(key)] = "" if value is None else str(value)
+        normalized_rows.append(normalized_row)
+    return normalized_rows
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Genere/merge le CSV Spotify d'une playlist puis telecharge les nouveaux titres via yt-dlp."
+        )
+    )
+    parser.add_argument(
+        "--no-download",
+        action="store_true",
+        help="Genere uniquement le CSV (sans lancer le telechargement).",
+    )
+    parser.add_argument(
+        "--download-dir",
+        default=DEFAULT_DOWNLOAD_DIR,
+        help="Dossier des fichiers telecharges (defaut: downloads).",
+    )
+    parser.add_argument(
+        "--audio-format",
+        default="mp3",
+        help="Format audio cible pour yt-dlp -x (defaut: mp3).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Nombre max de titres a traiter au telechargement.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Affiche les commandes yt-dlp sans telecharger.",
+    )
+    parser.add_argument(
+        "--cookies-from-browser",
+        default=os.getenv("YTDLP_COOKIES_FROM_BROWSER", ""),
+        help="Ex: chrome, edge, firefox (ou via env YTDLP_COOKIES_FROM_BROWSER).",
+    )
+    parser.add_argument(
+        "--cookies",
+        default=os.getenv("YTDLP_COOKIES_FILE", ""),
+        help="Chemin vers fichier cookies Netscape (ou via env YTDLP_COOKIES_FILE).",
+    )
+    return parser.parse_args()
+
+
+def start_download(
+    rows: List[Dict[str, object]],
+    csv_path: str,
+    playlist_name: str,
+    args: argparse.Namespace,
+) -> None:
+    from spotify_csv_to_youtube import (
+        download_tracks,
+        ensure_ytdlp_installed,
+        has_ffmpeg,
+        preflight_ytdlp_runtime_check,
+    )
+
+    ensure_ytdlp_installed()
+    preflight_ytdlp_runtime_check()
+    convert_audio = has_ffmpeg()
+    if not convert_audio:
+        print(
+            "INFO: ffmpeg/ffprobe introuvable -> telechargement audio sans conversion "
+            "(pas de mp3 force)."
+        )
+
+    download_tracks(
+        rows=rows_to_string_rows(rows),
+        csv_path=Path(csv_path),
+        download_dir=args.download_dir,
+        playlist_name=playlist_name,
+        audio_format=args.audio_format,
+        convert_audio=convert_audio,
+        limit=args.limit,
+        dry_run=args.dry_run,
+        cookies_from_browser=args.cookies_from_browser.strip(),
+        cookies_file=args.cookies.strip(),
+    )
+
+
 def main() -> None:
+    args = parse_args()
     load_dotenv()
     client_id = get_env_or_exit("SPOTIFY_CLIENT_ID")
     client_secret = get_env_or_exit("SPOTIFY_CLIENT_SECRET")
@@ -437,11 +532,17 @@ def main() -> None:
     playlist_name = run_diagnostics(playlist_id, token, scope, granted_scope)
     tracks = fetch_all_tracks(playlist_id, token)
     merged_rows, added_count, known_count = merge_tracks_with_existing_csv(tracks, playlist_name)
-    write_csv(merged_rows, build_output_path(playlist_name))
+    output_path = build_output_path(playlist_name)
+    write_csv(merged_rows, output_path)
     print(
         f"Mise a jour playlist '{playlist_name}': {added_count} nouveau(x) titre(s) ajoute(s), "
         f"{known_count} titre(s) deja present(s)."
     )
+    if args.no_download:
+        return
+
+    print("\nDemarrage du telechargement...")
+    start_download(merged_rows, output_path, playlist_name, args)
 
 
 if __name__ == "__main__":
