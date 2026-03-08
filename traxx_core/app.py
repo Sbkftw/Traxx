@@ -69,8 +69,8 @@ def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_na
 
 
 def main() -> None:
-    args = parse_args()
     load_dotenv()
+    args = parse_args()
     client_id = get_env_or_exit("SPOTIFY_CLIENT_ID")
     client_secret = get_env_or_exit("SPOTIFY_CLIENT_SECRET")
     redirect_uri = get_env_or_exit("SPOTIFY_REDIRECT_URI")
@@ -108,4 +108,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"Erreur: {exc}")
         sys.exit(1)
-

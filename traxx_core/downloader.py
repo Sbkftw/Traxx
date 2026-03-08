@@ -179,6 +179,44 @@ def is_signin_required_error(output: str) -> bool:
     return "please sign in" in lowered or "use --cookies-from-browser or --cookies" in lowered
 
 
+def is_js_challenge_error(output: str) -> bool:
+    lowered = output.lower()
+    return (
+        "js challenge provider" in lowered
+        or "signature solving failed" in lowered
+        or "n challenge solving failed" in lowered
+        or "only images are available for download" in lowered
+    )
+
+
+def remove_js_runtimes_args(cmd: List[str]) -> List[str]:
+    cleaned: List[str] = []
+    skip_next = False
+    for token in cmd:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--js-runtimes":
+            skip_next = True
+            continue
+        cleaned.append(token)
+    return cleaned
+
+
+def remove_cookies_args(cmd: List[str]) -> List[str]:
+    cleaned: List[str] = []
+    skip_next = False
+    for token in cmd:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in {"--cookies-from-browser", "--cookies"}:
+            skip_next = True
+            continue
+        cleaned.append(token)
+    return cleaned
+
+
 def has_ffmpeg() -> bool:
     return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 
@@ -218,6 +256,79 @@ def run_with_auth_fallback(
     return run
 
 
+def fetch_video_metadata(
+    video_id: str,
+    dry_run: bool,
+    cookies_from_browser: str,
+    cookies_file: str,
+    cookie_browser_candidates: List[str],
+) -> Tuple[Optional[Dict[str, object]], str]:
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    def run_metadata_with_extractor_args(extractor_args: Optional[str]) -> subprocess.CompletedProcess[str]:
+        cmd = [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            video_url,
+            "--dump-single-json",
+            "--skip-download",
+            "--no-playlist",
+            "--no-warnings",
+        ]
+        if extractor_args:
+            cmd.extend(["--extractor-args", extractor_args])
+        js_runtimes = build_js_runtimes()
+        if js_runtimes:
+            cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
+        if cookies_from_browser:
+            cmd.extend(["--cookies-from-browser", cookies_from_browser])
+        elif cookies_file:
+            cmd.extend(["--cookies", cookies_file])
+        return run_with_auth_fallback(cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+
+    run = run_metadata_with_extractor_args("youtube:player_client=web")
+    output = (run.stdout or "").strip()
+    if run.returncode != 0:
+        err = (run.stderr.strip() or output)
+        if is_js_challenge_error(err):
+            fallback_cmd = remove_cookies_args(
+                remove_js_runtimes_args(
+                [
+                    sys.executable,
+                    "-m",
+                    "yt_dlp",
+                    video_url,
+                    "--dump-single-json",
+                    "--skip-download",
+                    "--no-playlist",
+                    "--no-warnings",
+                    "--extractor-args",
+                    "youtube:player_client=android",
+                ]
+                )
+            )
+            run = run_with_auth_fallback(fallback_cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+            output = (run.stdout or "").strip()
+            err = (run.stderr.strip() or output)
+        if "Requested format is not available" in err:
+            run = run_metadata_with_extractor_args(None)
+            output = (run.stdout or "").strip()
+        if run.returncode != 0:
+            err = (run.stderr.strip() or output)
+            return None, err or "metadata-failed"
+
+    if not output:
+        return None, "metadata-empty"
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        return None, "metadata-json-invalid"
+    if not isinstance(payload, dict):
+        return None, "metadata-json-unexpected"
+    return payload, ""
+
+
 def pick_best_candidate(
     row: Dict[str, str],
     query: str,
@@ -226,34 +337,40 @@ def pick_best_candidate(
     cookies_file: str,
     cookie_browser_candidates: List[str],
 ) -> Tuple[Optional[Dict[str, object]], str]:
-    search_cmd = [
+    base_search_cmd = [
         sys.executable,
         "-m",
         "yt_dlp",
         f"ytsearch8:{query}",
         "--dump-single-json",
+        "--flat-playlist",
         "--skip-download",
         "--no-playlist",
         "--no-warnings",
-        "--extractor-args",
-        "youtube:player_client=web,web_creator",
+        "--ignore-errors",
     ]
-    js_runtimes = build_js_runtimes()
-    if js_runtimes:
-        search_cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
-    if cookies_from_browser:
-        search_cmd.extend(["--cookies-from-browser", cookies_from_browser])
-    elif cookies_file:
-        search_cmd.extend(["--cookies", cookies_file])
     if dry_run:
         return None, "dry-run: selection stricte non evaluee"
 
-    run = run_with_auth_fallback(search_cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
-    if run.returncode != 0:
-        output = (run.stderr.strip() or run.stdout.strip())
-        return None, output or "search-failed"
+    def run_search_with_extractor_args(extractor_args: Optional[str]) -> subprocess.CompletedProcess[str]:
+        search_cmd = list(base_search_cmd)
+        if extractor_args:
+            search_cmd.extend(["--extractor-args", extractor_args])
+        js_runtimes = build_js_runtimes()
+        if js_runtimes:
+            search_cmd.extend(["--js-runtimes", ",".join(js_runtimes)])
+        if cookies_from_browser:
+            search_cmd.extend(["--cookies-from-browser", cookies_from_browser])
+        elif cookies_file:
+            search_cmd.extend(["--cookies", cookies_file])
+        return run_with_auth_fallback(search_cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
 
+    run = run_search_with_extractor_args(None)
     output = (run.stdout or "").strip()
+    if run.returncode != 0:
+        err = (run.stderr.strip() or output)
+        if not output:
+            return None, err or "search-failed"
     if not output:
         return None, "search-empty"
 
@@ -275,9 +392,17 @@ def pick_best_candidate(
         entry_id = str(entry.get("id") or "").strip()
         if not entry_id:
             continue
-        score, strict_match, reason = score_candidate(row, entry)
+        score_entry = dict(entry)
+        if safe_int(score_entry.get("duration")) is None:
+            metadata, metadata_error = fetch_video_metadata(entry_id, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+            if metadata is not None:
+                score_entry = metadata
+            elif metadata_error:
+                best_reason = metadata_error
+                continue
+        score, strict_match, reason = score_candidate(row, score_entry)
         if strict_match and score > best_score:
-            best_entry = entry
+            best_entry = score_entry
             best_score = score
             best_reason = reason
 
@@ -416,8 +541,6 @@ def download_tracks(
             "--no-overwrites",
             "--embed-metadata",
             "--no-update",
-            "--extractor-args",
-            "youtube:player_client=web,web_creator",
             "-o",
             output_template,
         ]
@@ -431,6 +554,11 @@ def download_tracks(
             cmd.extend(["--cookies", cookies_file])
 
         run = run_with_auth_fallback(cmd, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
+        output = (run.stderr.strip() or run.stdout.strip())
+        if run.returncode != 0 and is_js_challenge_error(output):
+            cmd_android = remove_cookies_args(remove_js_runtimes_args(list(cmd)))
+            cmd_android.extend(["--extractor-args", "youtube:player_client=android"])
+            run = run_with_auth_fallback(cmd_android, dry_run, cookies_from_browser, cookies_file, cookie_browser_candidates)
         if run.returncode == 0:
             set_downloaded_value(row, downloaded=True)
             save_rows(csv_path, rows)
@@ -449,4 +577,3 @@ def download_tracks(
             print(f"    ECHEC: {output}")
 
     print(f"\nTermine: {processed} titres traites, {errors} echec(s), {skipped_already_downloaded} deja telecharge(s).")
-
