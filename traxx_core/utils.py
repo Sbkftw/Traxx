@@ -7,8 +7,8 @@ import re
 from typing import Any
 
 
-def load_dotenv(path: str = ".env") -> None:
-    """Load simple KEY=VALUE pairs into os.environ if not already set."""
+def load_dotenv(path: str = ".env", override: bool = True) -> None:
+    """Load simple KEY=VALUE pairs into os.environ."""
     if not os.path.exists(path):
         return
 
@@ -20,7 +20,7 @@ def load_dotenv(path: str = ".env") -> None:
             key, value = line.split("=", 1)
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
+            if key and (override or key not in os.environ):
                 os.environ[key] = value
 
 

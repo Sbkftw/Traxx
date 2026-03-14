@@ -52,6 +52,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate/merge a Spotify playlist CSV, then download pending tracks from YouTube."
     )
+    parser.add_argument("playlist", nargs="?", help="Spotify playlist URL or ID. Overrides SPOTIFY_PLAYLIST_URL when provided.")
+    parser.add_argument("--playlist-url", dest="playlist_url", default="", help="Spotify playlist URL or ID. Overrides SPOTIFY_PLAYLIST_URL when provided.")
     parser.add_argument("--no-download", action="store_true", help="Generate/merge CSV only.")
     parser.add_argument("--download-dir", default=DEFAULT_DOWNLOAD_DIR, help="Download target folder (default: downloads).")
     parser.add_argument("--audio-format", default="mp3", help="Target audio format when ffmpeg is available (default: mp3).")
@@ -92,7 +94,7 @@ def main() -> None:
     args = parse_args()
     credentials = load_spotify_credentials()
 
-    playlist_input = os.getenv("SPOTIFY_PLAYLIST_URL", "").strip()
+    playlist_input = (args.playlist_url or args.playlist or os.getenv("SPOTIFY_PLAYLIST_URL", "")).strip()
     if not playlist_input:
         playlist_input = input("URL (ou ID) de la playlist Spotify: ").strip()
     if not playlist_input:

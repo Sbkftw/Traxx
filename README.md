@@ -76,13 +76,15 @@ YTDLP_COOKIES_FILE=
 ```
 
 Notes:
-- If `SPOTIFY_PLAYLIST_URL` is empty, the script asks for it interactively.
+- Playlist input priority: `--playlist-url` or positional playlist arg, then `SPOTIFY_PLAYLIST_URL`, then interactive prompt. `.env` values overwrite existing environment variables by default.
 - `YTDLP_COOKIES_FROM_BROWSER` or `YTDLP_COOKIES_FILE` helps with YouTube restricted/sign-in-required videos.
 
 ## Run
 
 ```bash
 python traxx.py
+python traxx.py "https://open.spotify.com/playlist/..."
+python traxx.py --playlist-url "https://open.spotify.com/playlist/..."
 ```
 
 ## Code Structure
@@ -106,6 +108,10 @@ The codebase is split into focused modules to keep contributions safe and predic
 
 ## CLI Options (`traxx.py`)
 
+- `[playlist]`
+  - Optional positional Spotify playlist URL or ID
+- `--playlist-url <url-or-id>`
+  - Explicit Spotify playlist URL or ID; overrides `.env`
 - `--no-download`
   - Generate/merge CSV only, do not start download
 - `--download-dir <path>`

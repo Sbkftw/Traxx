@@ -67,7 +67,7 @@ def make_pending_download_row(track: Dict[str, object]) -> Dict[str, object]:
 
 def merge_tracks_with_existing_csv(new_tracks: List[Dict[str, object]], playlist_name: str) -> MergeResult:
     existing_csv = find_existing_playlist_csv(playlist_name)
-    output_path = build_output_path(playlist_name)
+    output_path = existing_csv or build_output_path(playlist_name)
     if not existing_csv:
         fresh_rows = [make_pending_download_row(row) for row in new_tracks]
         return MergeResult(rows=fresh_rows, added_count=len(fresh_rows), existing_count=0, output_path=output_path)
