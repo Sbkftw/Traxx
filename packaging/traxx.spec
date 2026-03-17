@@ -14,11 +14,11 @@ for relative_path in ("README.md", ".env.example", "traxx-hero.svg"):
     if source.exists():
         datas.append((str(source), "."))
 
-icon_path = project_root / "assets" / "traxx.ico"
+icon_path = project_root / "packaging" / "assets" / "traxx.ico"
 
 
 a = Analysis(
-    ["traxx.py"],
+    [str(project_root / "traxx.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,
@@ -53,3 +53,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+

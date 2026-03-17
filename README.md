@@ -65,7 +65,7 @@ traxx --help
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines, quality expectations, and PR checklist.
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines, quality expectations, and PR checklist.
 
 ## Environment Setup
 
@@ -118,13 +118,13 @@ Build a standalone executable on the target OS:
 
 ```bash
 python -m pip install -e .[build]
-pyinstaller --clean --noconfirm traxx.spec
+pyinstaller --clean --noconfirm packaging/traxx.spec
 ```
 
 Windows helper script:
 
 ```powershell
-.\scripts\build_windows.ps1
+.\packaging\windows\build_windows.ps1
 ```
 
 Generated output:
@@ -145,16 +145,26 @@ The codebase is split into focused modules to keep contributions safe and predic
   - Thin executable entrypoint
 - `traxx_core/app.py`
   - CLI parsing and end-to-end orchestration
+- `traxx_core/cli.py`
+  - Shared console presentation helpers
 - `traxx_core/spotify.py`
   - Spotify OAuth, diagnostics, playlist fetch
 - `traxx_core/csv_store.py`
   - CSV merge/write logic and backward-compatible file discovery
 - `traxx_core/downloader.py`
-  - YouTube candidate scoring + yt-dlp download + CSV status updates
+  - Stable public downloader API
+- `traxx_core/downloading/matching.py`
+  - Query generation and strict YouTube candidate selection
+- `traxx_core/downloading/runtime.py`
+  - yt-dlp runtime/process helpers and platform fallbacks
+- `traxx_core/downloading/workflow.py`
+  - Download orchestration and CSV status updates
 - `traxx_core/utils.py`
   - Shared helpers (`.env`, filename sanitization, `downloaded` normalization)
 - `traxx_core/constants.py`
   - Shared constants and default paths
+- `packaging/`
+  - Build assets and Windows packaging scripts
 
 ## CLI Options (`traxx.py`)
 
@@ -214,9 +224,14 @@ python traxx.py --limit 20 --cookies-from-browser edge
 
 - `pyproject.toml`
   - Installable metadata and `traxx` console entrypoint
-- `traxx.spec`
+- `packaging/traxx.spec`
   - `PyInstaller` build definition
+- `packaging/assets/traxx.ico`
+  - EXE icon asset used by the Windows build
+- `packaging/windows/build_windows.ps1`
+  - Convenience build script for generating `dist/traxx.exe`
+- `packaging/windows/generate_icon.ps1`
+  - Regenerates the icon assets used by the Windows build
 - `.env.example`
   - Template environment file for other users
-- `scripts/build_windows.ps1`
-  - Convenience build script for generating `dist/traxx.exe`
+

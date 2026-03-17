@@ -73,8 +73,13 @@ If your change impacts runtime behavior, also run at least one manual scenario:
 
 - `traxx.py`: executable entrypoint
 - `traxx_core/app.py`: CLI orchestration
+- `traxx_core/cli.py`: console presentation
 - `traxx_core/spotify.py`: Spotify OAuth and API fetching
 - `traxx_core/csv_store.py`: CSV merge/read/write behavior
-- `traxx_core/downloader.py`: YouTube selection/download workflow
+- `traxx_core/downloader.py`: stable downloader API
+- `traxx_core/downloading/`: internal downloader modules (matching, runtime, workflow)
 - `traxx_core/utils.py`: cross-module helpers
 - `traxx_core/constants.py`: shared constants
+- `packaging/`: build scripts, icon assets, and `PyInstaller` spec
+- `docs/`: secondary project documentation
+

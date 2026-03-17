@@ -1,11 +1,17 @@
 .env
+
+# Generated runtime data
+downloads/
 output/
+
+# Local experiments / manual packaging tests
+testingEnv/
+
+# Python cache / metadata
 __pycache__/
 *.pyc
+*.egg-info/
 
-downloads/
-PROJECT_SCOPE.md
+# Packaging artifacts
 build/
 dist/
-testingEnv/
-*.egg-info/
