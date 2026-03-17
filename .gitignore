@@ -7,4 +7,5 @@ downloads/
 PROJECT_SCOPE.md
 build/
 dist/
+testingEnv/
 *.egg-info/
