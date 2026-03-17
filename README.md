@@ -48,11 +48,19 @@ The script is designed for incremental usage: when you add new songs to an exist
 - Optional but recommended:
   - `ffmpeg` + `ffprobe` (for audio conversion, e.g. mp3)
   - `node` or `deno` (improves yt-dlp JS challenge handling)
+  - optional `yt_dlp_ejs` support if you want extra yt-dlp JS fallback coverage
 
 ## Installation
 
 ```bash
 python -m pip install -r requirements.txt
+```
+
+Alternative installable mode:
+
+```bash
+python -m pip install .
+traxx --help
 ```
 
 ## Contributing
@@ -85,7 +93,48 @@ Notes:
 python traxx.py
 python traxx.py "https://open.spotify.com/playlist/..."
 python traxx.py --playlist-url "https://open.spotify.com/playlist/..."
+traxx
 ```
+
+## Share With Other Users
+
+Recommended distribution strategy:
+- advanced users: install with `pipx`
+- non-technical users: use a packaged executable built with `PyInstaller`
+
+### Option 1: `pipx` install
+
+For users who already have Python:
+
+```bash
+pipx install .
+traxx --help
+```
+
+### Option 2: Portable executable
+
+Build a standalone executable on the target OS:
+
+```bash
+python -m pip install -e .[build]
+pyinstaller --clean --noconfirm traxx.spec
+```
+
+Windows helper script:
+
+```powershell
+.\scripts\build_windows.ps1
+```
+
+Generated output:
+- `dist/traxx.exe` on Windows
+
+Important notes for distributed builds:
+- users still need their own `.env` file; start from `.env.example`
+- `ffmpeg`/`ffprobe` are still recommended for mp3 conversion
+- `node` or `deno` may still help with some YouTube JS challenges
+- `yt_dlp_ejs` can be installed separately if additional yt-dlp JS fallback support is needed
+- browser cookies may still be required for sign-in-restricted videos
 
 ## Code Structure
 
@@ -159,3 +208,14 @@ python traxx.py --limit 20 --cookies-from-browser edge
   - Install `ffmpeg` and `ffprobe`
 - OAuth callback issues:
   - Verify `SPOTIFY_REDIRECT_URI` matches your Spotify app settings exactly
+
+## Packaging Files
+
+- `pyproject.toml`
+  - Installable metadata and `traxx` console entrypoint
+- `traxx.spec`
+  - `PyInstaller` build definition
+- `.env.example`
+  - Template environment file for other users
+- `scripts/build_windows.ps1`
+  - Convenience build script for generating `dist/traxx.exe`

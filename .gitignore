@@ -5,3 +5,6 @@ __pycache__/
 
 downloads/
 PROJECT_SCOPE.md
+build/
+dist/
+*.egg-info/

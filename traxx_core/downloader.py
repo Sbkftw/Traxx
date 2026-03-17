@@ -196,7 +196,7 @@ def preflight_ytdlp_runtime_check() -> None:
     if has_ejs and (has_node or has_deno):
         return
     print("INFO: Environnement yt-dlp incomplet pour certains flux YouTube (signature/n challenge).")
-    print("      Recommande: installer un runtime JS (node ou deno) + support EJS.")
+    print("      Recommande: installer un runtime JS (node ou deno) + support optionnel yt_dlp_ejs.")
 
 
 def build_js_runtimes() -> List[str]:
@@ -664,7 +664,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
             if "Please sign in" in output:
                 print("    CONSEIL: Utilise --cookies-from-browser edge|chrome|firefox, ou --cookies <fichier.txt>.")
             if ("Signature solving failed" in output or "n challenge solving failed" in output) and "Please sign in" not in output:
-                print("    CONSEIL: Installe node/deno + 'pip install -U \"yt-dlp[ejs]\"'.")
+                print("    CONSEIL: Installe node/deno et, si besoin, ajoute aussi 'pip install -U yt_dlp_ejs'.")
             print(f"    ECHEC: {output}")
 
     print(f"\nTermine: {processed} titres traites, {errors} echec(s), {skipped_already_downloaded} deja telecharge(s).")
