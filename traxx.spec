@@ -14,6 +14,8 @@ for relative_path in ("README.md", ".env.example", "traxx-hero.svg"):
     if source.exists():
         datas.append((str(source), "."))
 
+icon_path = project_root / "assets" / "traxx.ico"
+
 
 a = Analysis(
     ["traxx.py"],
@@ -44,6 +46,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
+    icon=str(icon_path) if icon_path.exists() else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
