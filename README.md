@@ -85,6 +85,7 @@ YTDLP_COOKIES_FILE=
 
 Notes:
 - Playlist input priority: `--playlist-url` or positional playlist arg, then `SPOTIFY_PLAYLIST_URL`, then interactive prompt. `.env` values overwrite existing environment variables by default.
+- When running the packaged executable, Traxx looks for `.env` next to the executable first, then falls back to the current working directory.
 - `YTDLP_COOKIES_FROM_BROWSER` or `YTDLP_COOKIES_FILE` helps with YouTube restricted/sign-in-required videos.
 
 ## Run
