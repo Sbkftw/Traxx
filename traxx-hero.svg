@@ -1,70 +1,87 @@
-﻿<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#061825"/>
-      <stop offset="0.5" stop-color="#0C2D44"/>
-      <stop offset="1" stop-color="#031018"/>
+      <stop offset="0" stop-color="#020403"/>
+      <stop offset="0.45" stop-color="#07110B"/>
+      <stop offset="1" stop-color="#000000"/>
     </linearGradient>
-    <linearGradient id="accent" x1="320" y1="200" x2="1280" y2="760" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00E5A8"/>
-      <stop offset="1" stop-color="#00B8FF"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 450) rotate(90) scale(360 560)">
-      <stop offset="0" stop-color="#2CF6FF" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#2CF6FF" stop-opacity="0"/>
+    <radialGradient id="coreGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 430) rotate(90) scale(350 540)">
+      <stop offset="0" stop-color="#1ED760" stop-opacity="0.34"/>
+      <stop offset="0.5" stop-color="#1ED760" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#1ED760" stop-opacity="0"/>
     </radialGradient>
-    <filter id="blurBig" x="-200" y="-200" width="2000" height="1300" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feGaussianBlur stdDeviation="40"/>
+    <linearGradient id="accent" x1="360" y1="230" x2="1240" y2="690" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1ED760"/>
+      <stop offset="1" stop-color="#6BFF9A"/>
+    </linearGradient>
+    <filter id="softBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16"/>
     </filter>
-    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="8"/>
+    <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4"/>
     </filter>
   </defs>
 
   <rect width="1600" height="900" fill="url(#bg)"/>
-  <ellipse cx="800" cy="450" rx="560" ry="360" fill="url(#glow)" filter="url(#blurBig)"/>
+  <ellipse cx="820" cy="430" rx="540" ry="350" fill="url(#coreGlow)"/>
 
-  <g opacity="0.25">
-    <circle cx="190" cy="120" r="2" fill="#9FEAFF"/>
-    <circle cx="320" cy="720" r="2" fill="#9FEAFF"/>
-    <circle cx="1450" cy="220" r="2" fill="#9FEAFF"/>
-    <circle cx="1320" cy="760" r="2" fill="#9FEAFF"/>
-    <circle cx="980" cy="130" r="2" fill="#9FEAFF"/>
+  <g opacity="0.2">
+    <path d="M120 226H1480" stroke="#1ED760" stroke-width="1"/>
+    <path d="M120 674H1480" stroke="#1ED760" stroke-width="1"/>
+    <path d="M210 120V780" stroke="#1ED760" stroke-width="1"/>
+    <path d="M1390 120V780" stroke="#1ED760" stroke-width="1"/>
   </g>
 
-  <g stroke="#4CC8FF" stroke-opacity="0.24" stroke-width="2">
-    <path d="M120 620C250 530 350 710 500 620C650 530 750 710 900 620C1050 530 1150 710 1300 620C1400 560 1450 580 1480 600"/>
-    <path d="M120 660C250 570 350 750 500 660C650 570 750 750 900 660C1050 570 1150 750 1300 660C1400 600 1450 620 1480 640"/>
-    <path d="M120 700C250 610 350 790 500 700C650 610 750 790 900 700C1050 610 1150 790 1300 700C1400 640 1450 660 1480 680"/>
+  <g opacity="0.18">
+    <circle cx="240" cy="190" r="2" fill="#1ED760"/>
+    <circle cx="1320" cy="214" r="2" fill="#1ED760"/>
+    <circle cx="1180" cy="732" r="2" fill="#1ED760"/>
+    <circle cx="340" cy="704" r="2" fill="#1ED760"/>
+    <circle cx="806" cy="112" r="2" fill="#1ED760"/>
   </g>
 
-  <g transform="translate(430 140)">
-    <circle cx="370" cy="310" r="250" fill="#071A29" stroke="url(#accent)" stroke-width="4"/>
-    <circle cx="370" cy="310" r="200" stroke="#2EC8FF" stroke-opacity="0.35" stroke-width="2"/>
-    <circle cx="370" cy="310" r="145" stroke="#2EC8FF" stroke-opacity="0.25" stroke-width="2"/>
-    <circle cx="370" cy="310" r="84" stroke="#2EC8FF" stroke-opacity="0.2" stroke-width="2"/>
-    <circle cx="370" cy="310" r="24" fill="#0E3349" stroke="#7DEBFF" stroke-width="3"/>
-
-    <rect x="780" y="275" width="250" height="20" rx="10" fill="#94EBFF" fill-opacity="0.85"/>
-    <circle cx="780" cy="285" r="18" fill="#B7F6FF"/>
-    <circle cx="780" cy="285" r="7" fill="#0A2A3D"/>
-
-    <g filter="url(#soft)">
-      <path d="M700 250L880 308" stroke="#8EEFFF" stroke-width="8" stroke-linecap="round"/>
-    </g>
-    <path d="M700 250L880 308" stroke="#D4FBFF" stroke-width="4" stroke-linecap="round"/>
+  <g opacity="0.28">
+    <path d="M176 618C300 560 424 688 548 618C672 548 796 688 920 618C1044 548 1168 688 1292 618C1350 586 1404 580 1460 592" stroke="#1ED760" stroke-width="2"/>
+    <path d="M176 654C300 596 424 724 548 654C672 584 796 724 920 654C1044 584 1168 724 1292 654C1350 622 1404 616 1460 628" stroke="#1ED760" stroke-width="2"/>
   </g>
+
+  <g filter="url(#softBlur)" opacity="0.5">
+    <path d="M430 300L1180 300" stroke="#1ED760" stroke-width="6"/>
+    <path d="M430 602L1180 602" stroke="#1ED760" stroke-width="6"/>
+  </g>
+
+  <g opacity="0.78">
+    <rect x="430" y="300" width="750" height="302" rx="28" fill="#050B07" stroke="url(#accent)" stroke-width="2"/>
+    <rect x="448" y="318" width="714" height="266" rx="18" fill="#030604" stroke="#163322" stroke-width="1.5"/>
+  </g>
+
+  <g opacity="0.42">
+    <path d="M486 354H1118" stroke="#1ED760" stroke-width="1"/>
+    <path d="M486 548H1118" stroke="#1ED760" stroke-width="1"/>
+    <path d="M568 338V566" stroke="#1ED760" stroke-width="1"/>
+    <path d="M1040 338V566" stroke="#1ED760" stroke-width="1"/>
+  </g>
+
+  <g filter="url(#lineGlow)" opacity="0.75">
+    <path d="M504 522C566 466 628 578 690 522C752 466 814 578 876 522C938 466 1000 578 1062 522C1098 490 1128 486 1156 494" stroke="#1ED760" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <path d="M504 522C566 466 628 578 690 522C752 466 814 578 876 522C938 466 1000 578 1062 522C1098 490 1128 486 1156 494" stroke="#9FFFC2" stroke-width="2.4" stroke-linecap="round"/>
+
+  <g filter="url(#lineGlow)">
+    <path d="M542 390L652 390" stroke="#1ED760" stroke-width="10" stroke-linecap="round"/>
+    <path d="M980 390L1090 390" stroke="#1ED760" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <path d="M542 390L652 390" stroke="#D2FFE3" stroke-width="4" stroke-linecap="round"/>
+  <path d="M980 390L1090 390" stroke="#D2FFE3" stroke-width="4" stroke-linecap="round"/>
 
   <g>
-    <rect x="240" y="160" width="300" height="88" rx="18" fill="#072235" fill-opacity="0.88" stroke="#1CCEFF" stroke-opacity="0.6"/>
-    <text x="270" y="215" fill="#E9FCFF" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Spotify -> CSV</text>
-
-    <rect x="1060" y="160" width="300" height="88" rx="18" fill="#072235" fill-opacity="0.88" stroke="#00E5A8" stroke-opacity="0.65"/>
-    <text x="1090" y="215" fill="#E9FCFF" font-size="34" font-family="Segoe UI, Arial, sans-serif" font-weight="700">CSV -> YouTube</text>
+    <text x="800" y="482" text-anchor="middle" fill="#F4FFF8" font-size="178" font-family="Segoe UI, Arial, sans-serif" font-weight="800" letter-spacing="10">TRAXX</text>
   </g>
 
-  <g>
-    <text x="800" y="820" text-anchor="middle" fill="#F3FEFF" font-size="124" font-family="Segoe UI, Arial, sans-serif" font-weight="800" letter-spacing="3">TRAXX</text>
-    <text x="800" y="860" text-anchor="middle" fill="#9EDFF5" font-size="30" font-family="Segoe UI, Arial, sans-serif" font-weight="500" letter-spacing="1.2">Incremental playlist sync and smart audio download</text>
+  <g opacity="0.34">
+    <path d="M390 270L480 270" stroke="#1ED760" stroke-width="3" stroke-linecap="round"/>
+    <path d="M1120 270L1210 270" stroke="#1ED760" stroke-width="3" stroke-linecap="round"/>
+    <path d="M390 632L480 632" stroke="#1ED760" stroke-width="3" stroke-linecap="round"/>
+    <path d="M1120 632L1210 632" stroke="#1ED760" stroke-width="3" stroke-linecap="round"/>
   </g>
 </svg>
