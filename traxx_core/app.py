@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cli import print_banner, print_error, print_info, print_section, print_success, print_warning
 from .constants import DEFAULT_DOWNLOAD_DIR, DEFAULT_SCOPE
 from .csv_store import merge_tracks_with_existing_csv, rows_to_string_rows, write_csv
 from .downloader import (
@@ -35,7 +36,7 @@ def get_env_or_exit(name: str) -> str:
     value = os.getenv(name, "").strip()
     if value:
         return value
-    print(f"Variable manquante: {name} (fichier .env)")
+    print_error(f"Missing required environment variable: {name} (.env)")
     sys.exit(1)
 
 
@@ -69,7 +70,7 @@ def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_na
     preflight_ytdlp_runtime_check()
     convert_audio = has_ffmpeg()
     if not convert_audio:
-        print("INFO: ffmpeg/ffprobe introuvable -> telechargement audio sans conversion (pas de mp3 force).")
+        print_warning("ffmpeg/ffprobe not found. Audio will be downloaded without conversion.")
 
     row_dicts = rows_to_string_rows(rows)
     if ensure_download_status_field(row_dicts):
@@ -90,15 +91,16 @@ def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_na
 
 
 def main() -> None:
+    print_banner()
     load_dotenv()
     args = parse_args()
     credentials = load_spotify_credentials()
 
     playlist_input = (args.playlist_url or args.playlist or os.getenv("SPOTIFY_PLAYLIST_URL", "")).strip()
     if not playlist_input:
-        playlist_input = input("URL (ou ID) de la playlist Spotify: ").strip()
+        playlist_input = input("\nSpotify playlist URL or ID: ").strip()
     if not playlist_input:
-        print("Aucune URL/ID fourni.")
+        print_error("No playlist URL or ID provided.")
         sys.exit(1)
 
     playlist_id = extract_playlist_id(playlist_input)
@@ -118,15 +120,18 @@ def main() -> None:
 
     merge_result = merge_tracks_with_existing_csv(tracks, playlist_name)
     write_csv(merge_result.rows, merge_result.output_path)
-    print(
-        f"Mise a jour playlist '{playlist_name}': {merge_result.added_count} nouveau(x) titre(s) ajoute(s), "
-        f"{merge_result.existing_count} titre(s) deja present(s)."
+    print_section("Playlist Sync")
+    print_success(
+        f"Playlist '{playlist_name}' updated: {merge_result.added_count} new track(s), "
+        f"{merge_result.existing_count} existing track(s)."
     )
 
     if args.no_download:
+        print_info("Download stage skipped (--no-download).")
         return
 
-    print("\nDemarrage du telechargement...")
+    print_section("Download Stage")
+    print_info("Starting download workflow.")
     run_download_stage(merge_result.rows, merge_result.output_path, playlist_name, args)
 
 
@@ -134,5 +139,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"Erreur: {exc}")
+        print_error(str(exc))
         sys.exit(1)

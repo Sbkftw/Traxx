@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from .cli import print_info, print_section
 from .constants import (
     AUTHORIZE_URL,
     LOCAL_CALLBACK_WAIT_SECONDS,
@@ -48,9 +49,9 @@ def extract_code_from_redirect_url(redirected_url: str) -> str:
     parsed = urllib.parse.urlparse(redirected_url.strip())
     query = urllib.parse.parse_qs(parsed.query)
     if "error" in query:
-        raise RuntimeError(f"Authorization refusee par Spotify: {query['error'][0]}")
+        raise RuntimeError(f"Spotify authorization was denied: {query['error'][0]}")
     if "code" not in query or not query["code"]:
-        raise RuntimeError("Impossible de trouver le parametre 'code' dans l'URL de redirection.")
+        raise RuntimeError("Could not find the 'code' parameter in the redirect URL.")
     return query["code"][0]
 
 
@@ -83,12 +84,12 @@ def try_get_code_via_local_callback(
             query = urllib.parse.parse_qs(parsed_path.query)
             if "error" in query and query["error"]:
                 result["error"] = query["error"][0]
-                body = "Autorisation refusee. Retourne au terminal."
+                body = "Authorization denied. Return to the terminal."
             elif "code" in query and query["code"]:
                 result["code"] = query["code"][0]
-                body = "Autorisation recue. Tu peux fermer cet onglet."
+                body = "Authorization received. You can close this tab."
             else:
-                body = "Parametre 'code' absent de la redirection."
+                body = "Missing 'code' parameter in redirect."
 
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -107,7 +108,8 @@ def try_get_code_via_local_callback(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        print("\nOuverture du navigateur pour autorisation Spotify...")
+        print_section("Spotify Authorization")
+        print_info("Opening the browser for Spotify authorization.")
         print(auth_url)
         try:
             webbrowser.open(auth_url)
@@ -121,7 +123,7 @@ def try_get_code_via_local_callback(
         thread.join(timeout=2)
 
     if "error" in result:
-        raise RuntimeError(f"Authorization refusee par Spotify: {result['error']}")
+        raise RuntimeError(f"Spotify authorization was denied: {result['error']}")
     return result.get("code")
 
 
@@ -132,7 +134,7 @@ def parse_json_response(response: requests.Response) -> Dict[str, object]:
         content_type = response.headers.get("Content-Type", "unknown")
         snippet = response.text[:300].strip() or "<empty body>"
         raise RuntimeError(
-            f"Reponse non-JSON recue de Spotify (HTTP {response.status_code}, "
+            f"Received a non-JSON response from Spotify (HTTP {response.status_code}, "
             f"Content-Type: {content_type}): {snippet}"
         ) from None
 
@@ -201,10 +203,11 @@ def get_user_access_token(client_id: str, client_secret: str, redirect_uri: str,
     auth_url = build_authorize_url(client_id, redirect_uri, scope)
     code = try_get_code_via_local_callback(auth_url, redirect_uri)
     if not code:
-        print("\n1) Ouvre cette URL et autorise l'application:")
+        print_section("Spotify Authorization")
+        print("1. Open this URL and authorize the application:")
         print(auth_url)
-        print("\n2) Apres redirection, copie-colle l'URL complete ici.")
-        redirected_url = input("\nURL de redirection: ").strip()
+        print("\n2. After the redirect, paste the full redirect URL here.")
+        redirected_url = input("\nRedirect URL: ").strip()
         code = extract_code_from_redirect_url(redirected_url)
 
     creds = f"{client_id}:{client_secret}".encode("utf-8")
@@ -217,7 +220,7 @@ def get_user_access_token(client_id: str, client_secret: str, redirect_uri: str,
     )
     access_token = data.get("access_token")
     if not access_token:
-        raise RuntimeError("Le token d'acces est absent de la reponse Spotify.")
+        raise RuntimeError("Spotify response did not include an access token.")
     return SpotifySession(access_token=str(access_token), granted_scope=str(data.get("scope", "")).strip())
 
 
@@ -238,17 +241,16 @@ def check_playlist_access(playlist_id: str, token: str) -> Dict[str, object]:
 
 
 def run_diagnostics(playlist_id: str, token: str, requested_scope: str, granted_scope: str) -> str:
-    print("\n=== Diagnostic OAuth Spotify ===")
-    print(f"Scopes demandes : {requested_scope}")
-    print(f"Scopes accordes : {granted_scope or '<non retourne par Spotify>'}")
+    print_section("Spotify Diagnostics")
+    print(f"Requested scopes: {requested_scope}")
+    print(f"Granted scopes: {granted_scope or '<not returned by Spotify>'}")
     user = get_current_user(token)
-    print(f"Compte authentifie : {user.get('display_name') or '<sans nom>'} ({user.get('id', '<inconnu>')})")
+    print(f"Authenticated account: {user.get('display_name') or '<unnamed>'} ({user.get('id', '<unknown>')})")
     playlist = check_playlist_access(playlist_id, token)
-    playlist_name = str(playlist.get("name") or "<sans nom>")
-    owner = (playlist.get("owner") or {}).get("id", "<inconnu>")
-    print(f"Playlist accessible : {playlist_name}")
+    playlist_name = str(playlist.get("name") or "<unnamed>")
+    owner = (playlist.get("owner") or {}).get("id", "<unknown>")
+    print(f"Accessible playlist: {playlist_name}")
     print(f"Owner: {owner} | Public: {playlist.get('public')} | Collaborative: {playlist.get('collaborative')}")
-    print("=== Fin diagnostic ===\n")
     return playlist_name
 
 

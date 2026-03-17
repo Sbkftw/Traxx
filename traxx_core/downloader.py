@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .cli import print_error, print_info, print_success, print_warning
 from .constants import DOWNLOAD_STATUS_FIELD, YTSEARCH_MAX_RESULTS
 from .utils import normalize_downloaded_value, parse_downloaded_value, sanitize_filename
 
@@ -184,8 +185,8 @@ def build_query_candidates(row: Dict[str, str]) -> List[str]:
 def ensure_ytdlp_installed() -> None:
     if importlib.util.find_spec("yt_dlp") is None:
         raise RuntimeError(
-            "yt-dlp est introuvable dans cet environnement Python. Installe-le avec 'python -m pip install yt-dlp' "
-            "et assure-toi que ffmpeg est installe si tu veux convertir en mp3."
+            "yt-dlp is not available in this Python environment. Install it with "
+            "'python -m pip install yt-dlp' and ensure ffmpeg is installed if you want mp3 conversion."
         )
 
 
@@ -195,8 +196,8 @@ def preflight_ytdlp_runtime_check() -> None:
     has_ejs = importlib.util.find_spec("yt_dlp_ejs") is not None
     if has_ejs and (has_node or has_deno):
         return
-    print("INFO: Environnement yt-dlp incomplet pour certains flux YouTube (signature/n challenge).")
-    print("      Recommande: installer un runtime JS (node ou deno) + support optionnel yt_dlp_ejs.")
+    print_warning("yt-dlp runtime is incomplete for some YouTube streams (signature/n challenge).")
+    print_info("Recommended: install a JS runtime (node or deno) and optionally add yt_dlp_ejs.")
 
 
 def build_js_runtimes() -> List[str]:
@@ -266,7 +267,7 @@ def has_ffmpeg() -> bool:
 
 def run_ytdlp_command(cmd: List[str], dry_run: bool) -> subprocess.CompletedProcess[str]:
     if dry_run:
-        print("    " + " ".join(cmd))
+        print("      " + " ".join(cmd))
         return subprocess.CompletedProcess(cmd, 0, "", "")
     return subprocess.run(cmd, capture_output=True, text=True)
 
@@ -282,14 +283,14 @@ def run_with_auth_fallback(
     if run.returncode != 0 and cookies_from_browser:
         output = (run.stderr.strip() or run.stdout.strip())
         if "Failed to decrypt with DPAPI" in output:
-            print("    INFO: Echec DPAPI avec cookies navigateur, nouvelle tentative sans cookies...")
+            print_info("Browser cookie decryption failed with DPAPI. Retrying without browser cookies.")
             cmd_no_cookies = [c for c in cmd if c not in {"--cookies-from-browser", cookies_from_browser}]
             run = run_ytdlp_command(cmd_no_cookies, dry_run)
     if run.returncode != 0 and not cookies_from_browser and not cookies_file:
         output = (run.stderr.strip() or run.stdout.strip())
         if is_signin_required_error(output):
             for browser in cookie_browser_candidates:
-                print(f"    INFO: Nouvelle tentative avec cookies navigateur: {browser}")
+                print_info(f"Retrying with browser cookies: {browser}")
                 retry = run_ytdlp_command(cmd + ["--cookies-from-browser", browser], dry_run)
                 if retry.returncode == 0:
                     return retry
@@ -393,7 +394,7 @@ def pick_best_candidate(
         "--ignore-errors",
     ]
     if dry_run:
-        return None, "dry-run: selection stricte non evaluee"
+        return None, "dry-run: strict candidate evaluation was not executed"
 
     def run_search_with_extractor_args(extractor_args: Optional[str]) -> subprocess.CompletedProcess[str]:
         search_cmd = list(base_search_cmd)
@@ -564,7 +565,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
             skipped_already_downloaded += 1
             track_name = (row.get("track_name") or "").strip() or "track"
             artists = (row.get("artists") or "").strip() or "Unknown Artist"
-            print(f"[SKIP] {track_name} - {artists} (deja telecharge)")
+            print_info(f"Skipping already downloaded track: {track_name} - {artists}")
             continue
 
         track_name = (row.get("track_name") or "").strip() or "track"
@@ -572,7 +573,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
         display_name = f"{track_name} - {artists}"
         output_template = str(Path(target_download_dir) / f"{sanitize_filename(display_name)}.%(ext)s")
         processed += 1
-        print(f"[{processed}] {display_name}")
+        print(f"[{processed}] Processing: {display_name}")
         last_error = ""
 
         if options.dry_run:
@@ -586,7 +587,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
                 cookies_from_browser=options.cookies_from_browser,
                 cookies_file=options.cookies_file,
             )
-            print("    DRY-RUN: verification stricte non executee (pas de reseau).")
+            print_info("Dry run mode: strict candidate verification was skipped.")
             run_ytdlp_command(preview_cmd, dry_run=True)
             continue
 
@@ -612,16 +613,16 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
             errors += 1
             set_downloaded_value(row, downloaded=False)
             save_rows(options.csv_path, rows)
-            print("    ECHEC: aucun resultat YouTube ne respecte les criteres stricts (titre/artiste/duree).")
+            print_error("No YouTube result matched the strict title/artist/duration criteria.")
             if last_error:
-                print(f"    DETAIL: {last_error}")
+                print_info(f"Last selection detail: {last_error}")
             continue
 
         video_id = str(selected_entry.get("id") or "").strip()
         video_url = f"https://www.youtube.com/watch?v={video_id}"
-        video_title = str(selected_entry.get("title") or "<sans titre>")
-        print(f"    Match retenu: {video_title} (query: {selected_query})")
-        print(f"    Score match: {selected_reason}")
+        video_title = str(selected_entry.get("title") or "<untitled>")
+        print_info(f"Selected match: {video_title} (query: {selected_query})")
+        print_info(f"Match score: {selected_reason}")
 
         cmd = build_download_command(
             video_url=video_url,
@@ -653,7 +654,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
         if run.returncode == 0:
             set_downloaded_value(row, downloaded=True)
             save_rows(options.csv_path, rows)
-            print("    OK")
+            print_success("Download completed.")
             continue
 
         output = (run.stderr.strip() or run.stdout.strip())
@@ -662,9 +663,9 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
         save_rows(options.csv_path, rows)
         if output:
             if "Please sign in" in output:
-                print("    CONSEIL: Utilise --cookies-from-browser edge|chrome|firefox, ou --cookies <fichier.txt>.")
+                print_info("Tip: use --cookies-from-browser edge|chrome|firefox or --cookies <file.txt>.")
             if ("Signature solving failed" in output or "n challenge solving failed" in output) and "Please sign in" not in output:
-                print("    CONSEIL: Installe node/deno et, si besoin, ajoute aussi 'pip install -U yt_dlp_ejs'.")
-            print(f"    ECHEC: {output}")
+                print_info("Tip: install node/deno and, if needed, add 'pip install -U yt_dlp_ejs'.")
+            print_error(output)
 
-    print(f"\nTermine: {processed} titres traites, {errors} echec(s), {skipped_already_downloaded} deja telecharge(s).")
+    print(f"\nSummary: processed={processed}, failed={errors}, skipped_already_downloaded={skipped_already_downloaded}")

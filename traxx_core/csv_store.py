@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from .cli import print_info, print_success
 from .constants import DOWNLOAD_STATUS_FIELD, OUTPUT_DIR
 from .utils import normalize_downloaded_value, sanitize_filename
 
@@ -92,7 +93,7 @@ def merge_tracks_with_existing_csv(new_tracks: List[Dict[str, object]], playlist
 
 def write_csv(rows: List[Dict[str, object]], output_path: str) -> None:
     if not rows:
-        print("Aucun titre trouve dans cette playlist.")
+        print_info("No tracks found in this playlist.")
         return
 
     # Preserve visible field order from first row and ensure status column is present.
@@ -103,7 +104,7 @@ def write_csv(rows: List[Dict[str, object]], output_path: str) -> None:
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"CSV genere: {output_path} ({len(rows)} titres)")
+    print_success(f"CSV written: {output_path} ({len(rows)} track(s))")
 
 
 def rows_to_string_rows(rows: List[Dict[str, object]]) -> List[Dict[str, str]]:
