@@ -9,6 +9,7 @@ description = "Incremental Spotify playlist sync to CSV and YouTube audio downlo
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "mutagen>=1.47.0",
     "requests>=2.31.0",
     "yt-dlp",
 ]

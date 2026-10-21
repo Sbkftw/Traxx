@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from ..cli import print_error, print_info, print_success
+from ..cli import print_error, print_info, print_success, print_warning
 from ..constants import DOWNLOAD_STATUS_FIELD
 from ..utils import normalize_downloaded_value, parse_downloaded_value, sanitize_filename
 from .matching import build_query, build_query_candidates, pick_best_candidate
+from .metadata import tag_downloaded_file
 from .runtime import (
     build_js_runtimes,
     detect_cookie_browser_candidates,
@@ -81,7 +82,6 @@ def build_download_command(
         video_url,
         "--no-playlist",
         "--no-overwrites",
-        "--embed-metadata",
         "--no-update",
         "-o",
         output_template,
@@ -113,7 +113,6 @@ def build_dry_run_preview_command(
         f"ytsearch8:{query}",
         "--no-playlist",
         "--no-overwrites",
-        "--embed-metadata",
         "--no-update",
         "--extractor-args",
         "youtube:player_client=web,web_creator",
@@ -235,6 +234,9 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
                 cookie_browser_candidates,
             )
         if run.returncode == 0:
+            metadata_result = tag_downloaded_file(output_template, options.audio_format, row)
+            if metadata_result.message:
+                print_warning(metadata_result.message)
             set_downloaded_value(row, downloaded=True)
             save_rows(options.csv_path, rows)
             print_success("Download completed.")
@@ -252,4 +254,3 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
             print_error(output)
 
     print(f"\nSummary: processed={processed}, failed={errors}, skipped_already_downloaded={skipped_already_downloaded}")
-
