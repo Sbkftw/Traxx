@@ -265,7 +265,14 @@ def fetch_all_tracks(playlist_id: str, token: str) -> List[Dict[str, object]]:
         except RuntimeError as exc:
             # Keep original debugging hint: include URL for auth/scope 403 analysis.
             if "Spotify API error 403:" in str(exc):
-                raise RuntimeError(f"{exc} | URL: {next_url}") from exc
+                raise RuntimeError(
+                    f"{exc} | URL: {next_url}. "
+                    "Spotify Development Mode restricts playlist items to playlists owned by "
+                    "the authenticated user or where they are a collaborator. If this app uses "
+                    "Development Mode, copy the tracks into a playlist you own and use its URL, "
+                    "or ask the owner to add you as a collaborator. Following a public playlist "
+                    "does not grant this access."
+                ) from exc
             raise
         params = None
 

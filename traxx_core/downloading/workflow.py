@@ -135,11 +135,15 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
     Path(target_download_dir).mkdir(parents=True, exist_ok=True)
     errors = 0
     processed = 0
+    downloaded = 0
     skipped_already_downloaded = 0
     cookie_browser_candidates = detect_cookie_browser_candidates()
 
     for row in rows:
-        if options.limit is not None and processed >= options.limit:
+        # Dry runs limit previews because no downloads are performed.
+        completed = processed if options.dry_run else downloaded
+        if options.limit is not None and completed >= options.limit:
+            print_info(f"Session limit reached: {options.limit}.")
             break
         if not build_query(row):
             continue
@@ -240,6 +244,7 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
             set_downloaded_value(row, downloaded=True)
             save_rows(options.csv_path, rows)
             print_success("Download completed.")
+            downloaded += 1
             continue
 
         output = (run.stderr.strip() or run.stdout.strip())
@@ -253,4 +258,4 @@ def download_tracks(rows: List[Dict[str, str]], options: DownloadOptions) -> Non
                 print_info("Tip: install node/deno and, if needed, add 'pip install -U yt_dlp_ejs'.")
             print_error(output)
 
-    print(f"\nSummary: processed={processed}, failed={errors}, skipped_already_downloaded={skipped_already_downloaded}")
+    print(f"\nSummary: processed={processed}, downloaded={downloaded}, failed={errors}, skipped_already_downloaded={skipped_already_downloaded}")

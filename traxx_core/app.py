@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import sys
 from dataclasses import dataclass
@@ -56,13 +57,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("playlist", nargs="?", help="Spotify playlist URL or ID. Overrides SPOTIFY_PLAYLIST_URL when provided.")
     parser.add_argument("--playlist-url", dest="playlist_url", default="", help="Spotify playlist URL or ID. Overrides SPOTIFY_PLAYLIST_URL when provided.")
     parser.add_argument("--no-download", action="store_true", help="Generate/merge CSV only.")
+    parser.add_argument("--csv", type=Path, help="Download directly from an existing CSV without contacting Spotify. Updates this CSV; uses its filename as the download subfolder.")
     parser.add_argument("--download-dir", default=DEFAULT_DOWNLOAD_DIR, help="Download target folder (default: downloads).")
     parser.add_argument("--audio-format", default="mp3", help="Target audio format when ffmpeg is available (default: mp3).")
-    parser.add_argument("--limit", type=int, default=None, help="Maximum number of tracks to process.")
+    parser.add_argument("--limit", type=int, default=None, help="Maximum successful downloads this run (positive integer). In dry-run mode, limits previews.")
     parser.add_argument("--dry-run", action="store_true", help="Print yt-dlp commands without downloading.")
     parser.add_argument("--cookies-from-browser", default=os.getenv("YTDLP_COOKIES_FROM_BROWSER", ""), help="Browser cookies source: edge/chrome/firefox.")
     parser.add_argument("--cookies", default=os.getenv("YTDLP_COOKIES_FILE", ""), help="Path to Netscape cookies file.")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.limit is not None and args.limit <= 0:
+        parser.error("--limit must be a positive integer.")
+    if args.csv is not None:
+        if args.playlist or args.playlist_url or args.no_download:
+            parser.error("--csv cannot be combined with a playlist or --no-download.")
+        if not args.csv.is_file():
+            parser.error(f"CSV file not found: {args.csv}")
+    return args
 
 
 def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_name: str, args: argparse.Namespace) -> None:
@@ -73,7 +83,7 @@ def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_na
         print_warning("ffmpeg/ffprobe not found. Audio will be downloaded without conversion.")
 
     row_dicts = rows_to_string_rows(rows)
-    if ensure_download_status_field(row_dicts):
+    if ensure_download_status_field(row_dicts) and not args.dry_run:
         save_rows(Path(csv_path), row_dicts)
 
     options = DownloadOptions(
@@ -90,10 +100,32 @@ def run_download_stage(rows: list[dict[str, object]], csv_path: str, playlist_na
     download_tracks(rows=row_dicts, options=options)
 
 
+def download_from_csv(csv_path: Path, args: argparse.Namespace) -> None:
+    """Load a local snapshot and update download status in that same file."""
+    with csv_path.open("r", encoding="utf-8-sig", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        required = {"track_name", "artists"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"CSV is missing required columns: {', '.join(sorted(missing))}")
+        rows = list(reader)
+        if any(None in row or any(value is None for value in row.values()) for row in rows):
+            raise ValueError("CSV contains rows with an incorrect number of columns.")
+    if not rows:
+        print_info("CSV contains no tracks to download.")
+        return
+    print_section("Download Stage")
+    print_info(f"Using CSV: {csv_path} ({len(rows)} track(s)).")
+    run_download_stage(rows, str(csv_path), csv_path.stem, args)
+
+
 def main() -> None:
     print_banner()
     load_dotenv()
     args = parse_args()
+    if args.csv is not None:
+        download_from_csv(args.csv, args)
+        return
     credentials = load_spotify_credentials()
 
     playlist_input = (args.playlist_url or args.playlist or os.getenv("SPOTIFY_PLAYLIST_URL", "")).strip()

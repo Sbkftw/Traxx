@@ -55,6 +55,40 @@ traxx --playlist-url "https://open.spotify.com/playlist/..."
 traxx --dry-run --limit 3
 ```
 
+### Download in batches
+
+```powershell
+.\.venv\Scripts\python.exe traxx.py --limit 300
+```
+
+Stops after 300 successful downloads, or when no pending tracks remain.
+The CSV is saved after each download. Run the same command later to download
+the next 300 pending tracks; rows marked `downloaded=yes` are skipped.
+Failed matches or downloads remain `downloaded=no` and do not count toward the
+limit. They are retried on the next run. Keep the CSV to preserve progress.
+`--limit` must be positive; omit it to process all pending tracks.
+With `--dry-run`, it limits previews instead of successful downloads.
+
+These changes apply to the Python source; rebuild `traxx.exe` to use them in
+the packaged application.
+
+### Download from an existing CSV
+
+```powershell
+traxx --csv "output/DnB2.csv" --limit 300
+traxx --csv "output/DnB2.csv" --dry-run --limit 3
+```
+
+This mode skips Spotify authentication and synchronization. Only rows in the
+given CSV are processed, and successful downloads update that same file's
+`downloaded` column. Existing `downloaded=yes` rows are skipped. A missing status
+column is added automatically. Keep the file to resume in later sessions.
+Downloads go into `downloads/<CSV filename without extension>/` (or under
+`--download-dir`). CSV files must be comma-separated UTF-8, with `track_name`
+and `artists` columns; Traxx exports can be used directly. `duration_ms` is
+recommended for matching. Dry runs leave the input file unchanged.
+`--csv` cannot be combined with a playlist argument or `--no-download`.
+
 ## Project Layout
 
 - `traxx.py`: thin executable entrypoint.
